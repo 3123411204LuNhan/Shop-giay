@@ -157,7 +157,7 @@ npm.cmd start
 
 `npm.cmd test` kiểm tra các luồng thật qua API và MySQL: xác thực, chống tự nâng quyền, phân quyền, đặt hàng có ưu đãi, gửi lại cùng request, giữ/xuất/giải phóng kho, thanh toán, trả hàng, hoàn tiền và đối chiếu sổ kho. Chỉ chạy trên database riêng có tên bắt đầu bằng `sole_studio_nhom19`.
 
-`npm.cmd start` phục vụ bản đã build. Chỉ chạy một máy chủ cho cùng cổng. Bản production có cookie Secure nên khi triển khai HTTPS thực tế đặt `NODE_ENV=production` cùng tên miền HTTPS; cấu hình hiện tại là bản chạy local.
+`npm.cmd start` phục vụ bản đã build. Chỉ chạy một máy chủ cho cùng cổng. Cookie tự dùng Secure khi request đi qua HTTPS; NODE_ENV không quyết định cờ này. Khi dùng reverse proxy HTTPS, cấu hình TRUST_PROXY_HOPS theo hạ tầng thực tế.
 
 ## Cấu trúc mã nguồn
 
@@ -196,3 +196,15 @@ Shop-giay/
 ## Nguồn ảnh minh họa
 
 Ảnh cục bộ tải từ các tài nguyên Unsplash: `photo-1542291026-7eec264c27ff`, `photo-1600269452121-4f2416e55c28`, `photo-1549298916-b41d501d3772`, `photo-1600185365926-3a2ce3cdb9eb`, `photo-1539185441755-769473a23570`, `photo-1543508282-6319a3e2621f`. Script `scripts/download-images.js` tải lại nếu cần. Font giao diện là Be Vietnam Pro qua Google Fonts, có font hệ thống dự phòng khi không có mạng.
+
+## Phiên đăng nhập độc lập giữa ba khu vực
+
+Khách hàng, chủ shop và kỹ thuật dùng ba cookie HttpOnly riêng: `sole_customer_session`, `sole_manager_session`, `sole_admin_session`. Có thể đăng nhập ba tài khoản trong cùng trình duyệt. Mở một khu vực khác không dùng nhầm vai trò; đăng xuất chỉ thu hồi phiên của khu vực hiện tại.
+
+Sau khi cập nhật từ bản dùng chung `sole_session`, đăng nhập lại một lần ở từng khu vực. Cookie chung cũ sẽ được xóa. Backend vẫn kiểm tra vai trò từ database, không cấp quyền chỉ dựa vào tên cookie hoặc header.
+
+Giao diện gửi `X-Sole-Area: customer`, `manager` hoặc `admin` theo khu vực đang mở. Client gọi API trực tiếp cần gửi header này cho `/api/me` và các API xác thực. Đăng nhập công khai có thể trả về `area` của workspace tương ứng với vai trò được cấp.
+
+Cookie Secure được quyết định theo HTTPS của request, không theo NODE_ENV, để đăng nhập HTTP local vẫn hoạt động với bản build production. Nếu thực sự triển khai sau reverse proxy HTTPS, đặt `TRUST_PROXY_HOPS` theo số proxy tin cậy thực tế; mặc định 0 là không tin header proxy.
+
+Nút “Xem cửa hàng” đã được bỏ khỏi sidebar của chủ shop và admin kỹ thuật.

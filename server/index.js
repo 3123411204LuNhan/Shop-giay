@@ -9,6 +9,9 @@ import { pool, query } from './db.js';
 import { router } from './routes.js';
 const app=express(); const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 app.disable('x-powered-by');
+// Opt in only when an HTTPS reverse proxy with this hop count is in front.
+const proxyHops=Number(process.env.TRUST_PROXY_HOPS||0);
+if(Number.isInteger(proxyHops)&&proxyHops>0)app.set('trust proxy',proxyHops);
 app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));
 app.use(express.json({limit:'1mb'}));app.use(cookieParser());
 app.get('/api/health',async(req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ok',database:'connected'});}catch{res.status(503).json({status:'setup_required',message:'Chưa kết nối MySQL. Kiểm tra DB_HOST, DB_PORT và DB_PASSWORD trong .env, chạy npm run db:setup rồi npm run db:seed.'});}});

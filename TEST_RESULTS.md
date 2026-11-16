@@ -34,3 +34,13 @@ Ngày kiểm tra: 11/11/2026. Môi trường: Node.js 24.20.0, MySQL 8.0.46, dat
 ## Giới hạn đã ghi trong README
 
 Chưa tích hợp cổng thanh toán trực tuyến/email production; ảnh nhận URL thay vì upload. Đổi size đang thực hiện qua trả/hoàn tiền và đặt lại đơn mới. Giao diện khuyến mãi tạo phạm vi toàn bộ và nhận một mã trên mỗi đơn. Các phần này không được xem là tích hợp dịch vụ bên ngoài đã hoàn thành.
+
+## Cập nhật 16/11/2026 — phiên đăng nhập theo khu vực
+
+- Tách cookie khách hàng, chủ shop và admin; kiểm tra bằng cùng cookie jar và cùng trình duyệt thật.
+- Đã đăng nhập admin, tiếp tục đăng nhập chủ shop và khách; đăng xuất khách rồi tải lại admin/manager: cả hai phiên quản lý vẫn còn hoạt động.
+- Bỏ nút Xem cửa hàng ở cả hai sidebar quản lý.
+- HTTP local không còn bị áp cờ Secure chỉ vì NODE_ENV=production; HTTPS vẫn có cờ Secure.
+- Xóa cookie sai/hết hiệu lực và cookie chung cũ; header khu vực không thay thế kiểm tra vai trò.
+- `npm run check`, `npm run build` thành công; `npm test`: 17 pass, 0 fail.
+- Không đổi schema hoặc mật khẩu MySQL. Sau cập nhật cần đăng nhập lại từng khu vực một lần.

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { query as q, tx, fail, positive, text } from './db.js';
 import { identify, requireUser, role, hashPassword, verifyPassword, createSession, tokenHash, audit } from './auth.js';
+import { SESSION_AREAS, loginArea, clearSessionCookie, validSessionToken } from './session-cookie.js';
 export const router = Router();
 const manager=role(['SHOP_MANAGER']),admin=role(['SYSTEM_ADMIN']);
 const run=fn=>async(req,res,next)=>{try{res.json(await fn(req,res));}catch(e){next(e);}};
@@ -14,15 +15,17 @@ router.post('/auth/login',run(async(r,s)=>{
   const users=await q("SELECT TaiKhoanID id,MatKhauHash hash,TrangThai status,KhoaDenLuc locked FROM TaiKhoan WHERE Email=? OR TenDangNhap=?",[text(r.body.login),text(r.body.login)]);
   const u=users[0];if(!u||String(r.body.password||'').length>128||!verifyPassword(String(r.body.password||''),u.hash)){if(u)await q('UPDATE TaiKhoan SET SoLanDangNhapSai=SoLanDangNhapSai+1,KhoaDenLuc=IF(SoLanDangNhapSai>=5,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 15 MINUTE),KhoaDenLuc) WHERE TaiKhoanID=?',[u.id]);fail('Email hoặc mật khẩu không đúng.',401);}
   if(u.status!=='HOAT_DONG'||(u.locked&&new Date(u.locked)>new Date()))fail('Tài khoản đang bị khóa.',403);
-  await createSession(u,s);await q('UPDATE TaiKhoan SET LanDangNhapCuoi=UTC_TIMESTAMP(),SoLanDangNhapSai=0 WHERE TaiKhoanID=?',[u.id]);return {ok:true};
+  const roles=(await q('SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=?',[u.id])).map(x=>x.role);
+  const area=loginArea(roles,r.sessionArea);if(!area)fail('Tài khoản không có quyền đăng nhập khu vực này.',403);
+  await createSession(u,r,s,area);await q('UPDATE TaiKhoan SET LanDangNhapCuoi=UTC_TIMESTAMP(),SoLanDangNhapSai=0 WHERE TaiKhoanID=?',[u.id]);return {ok:true,area};
 }));
 router.post('/auth/register',run(async(r,s)=>{
   const name=required(r.body.name,'họ tên'),email=required(r.body.email,'email').toLowerCase(),password=String(r.body.password||'');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8||password.length>128)fail('Email chưa hợp lệ hoặc mật khẩu chưa đủ 8 ký tự.');
   const id=await tx(async c=>{const a=await q('INSERT INTO TaiKhoan(TenDangNhap,Email,MatKhauHash,HoTen,SoDienThoai) VALUES(?,?,?,?,?)',[email,email,hashPassword(password),name,text(r.body.phone,20)||null],c);await q("INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID) SELECT ?,VaiTroID FROM VaiTro WHERE MaVaiTro='CUSTOMER'",[a.insertId],c);return a.insertId;});
-  await createSession({id},s);return {ok:true};
+  await createSession({id},r,s,'customer');return {ok:true,area:'customer'};
 }));
-router.post('/auth/logout',run(async(r,s)=>{if(r.cookies.sole_session)await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TokenHash=?',[tokenHash(r.cookies.sole_session)]);s.clearCookie('sole_session',{path:'/'});return {ok:true};}));
+router.post('/auth/logout',run(async(r,s)=>{const token=r.cookies[SESSION_AREAS[r.sessionArea].cookie];if(validSessionToken(token))await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TokenHash=?',[tokenHash(token)]);clearSessionCookie(r,s);return {ok:true};}));
 router.post('/auth/forgot',run(async r=>{
   // Local development mailbox: the link is written to .local/mail, never disclosed to public callers.
   const users=await q('SELECT TaiKhoanID id FROM TaiKhoan WHERE Email=?',[text(r.body.email)]);
