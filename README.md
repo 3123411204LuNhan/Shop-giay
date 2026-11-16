@@ -1,6 +1,6 @@
 # Shop-giay — SOLE STUDIO Nhóm 19
 
-Ứng dụng web dùng **Node.js + React + MySQL**, xây dựng từ các chức năng trong `S2_Nhom19_Lan3.docx`. Giao diện tiếng Việt, thích ứng máy tính và điện thoại. Dữ liệu được lưu thật vào MySQL; giỏ khách chưa đăng nhập và danh sách yêu thích được lưu trên thiết bị.
+Ứng dụng web dùng **Node.js + React + MySQL**, xây dựng từ các chức năng trong `S2_Nhom19_Lan3.docx`. Giao diện tiếng Việt, thích ứng máy tính và điện thoại. Dữ liệu được lưu thật vào MySQL; giỏ khách được lưu riêng theo tab, không tự gộp vào tài khoản; danh sách yêu thích được lưu trên thiết bị.
 
 ## Các khu vực của ứng dụng
 
@@ -103,7 +103,7 @@ Không khởi động container trùng cổng 3306 với MySQL đang chạy. Doc
 - Trang chủ, bộ sưu tập sản phẩm, tìm theo tên/mã/thương hiệu.
 - Lọc danh mục, thương hiệu, kích cỡ, màu, mức giá; sắp xếp giá và sản phẩm mới.
 - Xem chi tiết, giá, mô tả, đánh giá và lựa chọn size/màu còn hàng.
-- Giỏ hàng: thêm, đổi số lượng, xóa; khách chưa đăng nhập có giỏ trên thiết bị; đăng nhập sẽ gộp vào giỏ tài khoản khi tồn kho còn phù hợp.
+- Giỏ hàng: thêm, đổi số lượng, xóa. Giỏ tài khoản lưu riêng trong MySQL theo ID khách; giỏ khách dùng sessionStorage theo tab. Đăng nhập/đăng xuất dọn giỏ khách, không tự chuyển sản phẩm vào tài khoản khác.
 - Đăng ký, đăng nhập, đăng xuất, sửa họ tên/điện thoại/địa chỉ.
 - Quên mật khẩu bằng OTP 6 số qua Gmail/SMTP; nếu chưa cấu hình hoặc gửi thất bại thì lưu hộp thư `.local/mail`. Xác minh mã trước khi đặt mật khẩu mới.
 - Đặt hàng bằng COD hoặc chuyển khoản; áp mã giảm giá; miễn phí giao hàng từ 1.500.000đ, còn lại 30.000đ.
@@ -203,7 +203,7 @@ Khách hàng, chủ shop và kỹ thuật dùng ba cookie HttpOnly riêng: `sole
 
 Sau khi cập nhật từ bản dùng chung `sole_session`, đăng nhập lại một lần ở từng khu vực. Cookie chung cũ sẽ được xóa. Backend vẫn kiểm tra vai trò từ database, không cấp quyền chỉ dựa vào tên cookie hoặc header.
 
-Giao diện gửi `X-Sole-Area: customer`, `manager` hoặc `admin` theo khu vực đang mở. Client gọi API trực tiếp cần gửi header này cho `/api/me` và các API xác thực. Đăng nhập công khai có thể trả về `area` của workspace tương ứng với vai trò được cấp.
+Giao diện gửi `X-Sole-Area: customer`, `manager` hoặc `admin` theo khu vực đang mở. Client gọi API trực tiếp cần gửi header này cho `/api/me` và các API xác thực. Đăng nhập chỉ thành công ở đúng khu vực: khách tại `/`, chủ shop tại `/manager`, kỹ thuật tại `/admin`. Không tự chuyển tài khoản nhân sự từ trang đăng nhập khách sang workspace.
 
 Cookie Secure được quyết định theo HTTPS của request, không theo NODE_ENV, để đăng nhập HTTP local vẫn hoạt động với bản build production. Nếu thực sự triển khai sau reverse proxy HTTPS, đặt `TRUST_PROXY_HOPS` theo số proxy tin cậy thực tế; mặc định 0 là không tin header proxy.
 
@@ -212,3 +212,11 @@ Nút “Xem cửa hàng” đã được bỏ khỏi sidebar của chủ shop v�
 ## OTP Gmail và fallback local
 
 Xem [hướng dẫn gửi OTP](EMAIL_SETUP.md). Bản nâng cấp dùng mã 6 số, hiệu lực 10 phút, tối đa 5 lần nhập sai. Database cũ cần chạy `npm.cmd run db:migrate` một lần; database mới đã có cột cần thiết.
+
+## Giỏ hàng và tài khoản dùng chung máy
+
+Giỏ của A không được đưa vào localStorage để rồi gộp sang B. Giỏ khách cũ dùng khóa `sole-cart` được dọn; giỏ khách mới lưu riêng theo tab và được xóa khi đăng nhập/đăng xuất. Giỏ đã đăng nhập luôn lấy từ database của tài khoản hiện tại, được giữ lại khi đăng xuất để chính chủ có thể mua tiếp.
+
+Các tab nhận thông báo khi đổi tài khoản và kiểm tra lại phiên khi quay về tab. Request riêng tư có `X-Sole-Account`; nếu tab còn hiển thị A nhưng cookie đã đổi sang B, server trả SESSION_CHANGED và không cập nhật giỏ B. Không tự gửi lại thao tác cũ dưới tài khoản mới.
+
+Tài khoản có vai trò SHOP_MANAGER hoặc SYSTEM_ADMIN không được đăng nhập khu vực khách, kể cả khi còn có cờ CUSTOMER. API giỏ, đặt hàng và đổi/trả của khách cũng chặn tài khoản nhân sự; chủ shop vẫn xem chi tiết đơn qua quyền quản lý.

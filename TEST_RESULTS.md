@@ -54,3 +54,13 @@ Chưa tích hợp cổng thanh toán trực tuyến/email production; ảnh nh�
 - `npm run mail:verify` kết nối và xác thực Gmail SMTP thành công bằng cấu hình riêng trong .env. Lệnh này không gửi email; chưa xác nhận nhận thư thực tế trong Inbox.
 - Migration đã thêm cột MaXacMinhHash mà không xóa dữ liệu, giữ 37 bảng.
 - Kiểm thử phiên khách dùng tài khoản QA riêng, không phụ thuộc mật khẩu mẫu mà người dùng có thể đã đổi.
+
+## Cập nhật giỏ hàng và phân quyền — 16/11/2026
+
+- `npm run check`, `npm run build` thành công; `npm test`: 31 pass, 0 fail.
+- Kiểm thử API với cùng cookie jar: A giữ 2 đôi sau đăng xuất; B có giỏ riêng; đăng nhập lại mỗi người vẫn thấy đúng giỏ của mình.
+- Yêu cầu từ tab cũ mang mã tài khoản A trong phiên B bị chặn HTTP 409 SESSION_CHANGED; giỏ B không bị sửa.
+- Giỏ vãng lai dùng sessionStorage theo tab, xóa dữ liệu sole-cart cũ và không tự gộp khi đăng nhập.
+- Kiểm thử giao diện: giỏ vãng lai 2 đôi không cộng vào giỏ A đang có 2 đôi; A đăng xuất, B đăng nhập có giỏ trống. Ảnh: screenshots/gio-hang-b-doc-lap.png.
+- Chủ shop và kỹ thuật bị từ chối đăng nhập ở trang khách hàng; API mua sắm trả 403 cho phiên quản lý. Chức năng quản lý và xem chi tiết đơn của chủ shop vẫn hoạt động.
+- Không thay đổi schema, mật khẩu hoặc cấu hình SMTP.

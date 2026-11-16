@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { query as q, tx, fail, positive, text } from './db.js';
 import { identify, requireUser, role, hashPassword, verifyPassword, createSession, tokenHash, audit } from './auth.js';
-import { SESSION_AREAS, loginArea, clearSessionCookie, validSessionToken } from './session-cookie.js';
+import { SESSION_AREAS, loginArea, clearSessionCookie, validSessionToken, canUseArea } from './session-cookie.js';
 import { requestPasswordReset, verifyResetCode, resetPassword } from './password-reset.js';
 export const router = Router();
 const manager=role(['SHOP_MANAGER']),admin=role(['SYSTEM_ADMIN']);
@@ -11,6 +11,15 @@ const required=(v,label)=>{const s=text(v);if(!s)fail(`Vui lòng nhập ${label}
 const price=v=>{const n=Number(v);if(!Number.isFinite(n)||n<=0||n>1e10)fail('Giá tiền không hợp lệ.');return Math.round(n);};
 const code=prefix=>prefix+'-'+Date.now().toString(36).toUpperCase()+'-'+randomBytes(2).toString('hex').toUpperCase();
 router.use(identify);
+// A tab rendered for A must not mutate B's cart after a shared browser cookie changes.
+router.use((r,s,next)=>{
+  const expected=r.get('x-sole-account');
+  const publicAuth=r.path==='/me'||['/auth/login','/auth/register','/auth/forgot','/auth/verify-otp','/auth/reset'].includes(r.path);
+  if(expected&&r.user&&String(r.user.id)!==expected&&!publicAuth){
+    return next(Object.assign(new Error('Tài khoản trong trình duyệt đã thay đổi. Vui lòng kiểm tra lại giỏ hàng trước khi thao tác.'),{status:409,code:'SESSION_CHANGED'}));
+  }
+  next();
+});
 router.get('/me',run(async r=>({user:r.user||null})));
 router.post('/auth/login',run(async(r,s)=>{
   const users=await q("SELECT TaiKhoanID id,MatKhauHash hash,TrangThai status,KhoaDenLuc locked FROM TaiKhoan WHERE Email=? OR TenDangNhap=?",[text(r.body.login),text(r.body.login)]);
@@ -20,7 +29,9 @@ router.post('/auth/login',run(async(r,s)=>{
   const area=loginArea(roles,r.sessionArea);if(!area)fail('Tài khoản không có quyền đăng nhập khu vực này.',403);
   await createSession(u,r,s,area);await q('UPDATE TaiKhoan SET LanDangNhapCuoi=UTC_TIMESTAMP(),SoLanDangNhapSai=0 WHERE TaiKhoanID=?',[u.id]);return {ok:true,area};
 }));
+//phần đăng ký tài khoản mới
 router.post('/auth/register',run(async(r,s)=>{
+  if(r.sessionArea!=='customer')fail('Vui lòng đăng ký tài khoản khách hàng tại khu vực mua sắm.',403);
   const name=required(r.body.name,'họ tên'),email=required(r.body.email,'email').toLowerCase(),password=String(r.body.password||'');
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8||password.length>128)fail('Email chưa hợp lệ hoặc mật khẩu chưa đủ 8 ký tự.');
   const id=await tx(async c=>{const a=await q('INSERT INTO TaiKhoan(TenDangNhap,Email,MatKhauHash,HoTen,SoDienThoai) VALUES(?,?,?,?,?)',[email,email,hashPassword(password),name,text(r.body.phone,20)||null],c);await q("INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID) SELECT ?,VaiTroID FROM VaiTro WHERE MaVaiTro='CUSTOMER'",[a.insertId],c);return a.insertId;});
@@ -53,6 +64,12 @@ router.get('/products/:id',run(async r=>{
 router.get('/promotions',run(async()=>await q("SELECT MaKhuyenMai code,TenKhuyenMai name,HinhThuc type,GiaTri value,GiaTriDonToiThieu minimum FROM KhuyenMai WHERE TrangThai='DANG_AP_DUNG' AND BatDauLuc<=UTC_TIMESTAMP() AND KetThucLuc>UTC_TIMESTAMP()")));
 
 router.use(requireUser);
+router.use((r,s,next)=>{
+  if(r.path.startsWith('/manage/')||r.path.startsWith('/admin/'))return next();
+  if(r.method==='GET'&&/^\/orders\/\d+$/.test(r.path)&&r.sessionArea==='manager'&&r.user.roles.includes('SHOP_MANAGER'))return next();
+  if(r.sessionArea!=='customer'||!canUseArea(r.user.roles,'customer'))return next(Object.assign(new Error('Chức năng mua sắm chỉ dành cho tài khoản khách hàng.'),{status:403}));
+  next();
+});
 router.put('/profile',run(async r=>{await q('UPDATE TaiKhoan SET HoTen=?,SoDienThoai=?,DiaChi=?,NgayCapNhat=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[required(r.body.name,'họ tên'),text(r.body.phone,20)||null,text(r.body.address,500)||null,r.user.id]);return {ok:true};}));
 async function cartId(id,c){await q('INSERT INTO GioHang(TaiKhoanID) VALUES(?) ON DUPLICATE KEY UPDATE TaiKhoanID=VALUES(TaiKhoanID)',[id],c);return (await q('SELECT GioHangID id FROM GioHang WHERE TaiKhoanID=?',[id],c))[0].id;}
 router.get('/cart',run(async r=>{const id=await cartId(r.user.id);return await q(`SELECT ct.BienTheID variantId,ct.SoLuong quantity,s.TenSanPham name,COALESCE(b.GiaBanRieng,s.GiaBan) price,kc.GiaTri size,m.TenMau color,k.SoLuongKhaDung stock,

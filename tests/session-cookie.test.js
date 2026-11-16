@@ -13,7 +13,9 @@ test('HTTP local giữ được cookie dù NODE_ENV=production; HTTPS vẫn dùn
 });
 test('Ba khu vực có cookie riêng và chỉ đăng nhập vào vai trò được cấp',()=>{
   assert.equal(new Set(Object.values(SESSION_AREAS).map(x=>x.cookie)).size,3);
-  assert.equal(loginArea(['SYSTEM_ADMIN'],'customer'),'admin');
+  assert.equal(loginArea(['SYSTEM_ADMIN'],'customer'),null);
+  assert.equal(loginArea(['SHOP_MANAGER'],'customer'),null);
+  assert.equal(loginArea(['CUSTOMER','SYSTEM_ADMIN'],'customer'),null);
   assert.equal(loginArea(['SYSTEM_ADMIN'],'manager'),null);
   assert.equal(loginArea(['CUSTOMER'],'admin'),null);
   assert.equal(loginArea(['CUSTOMER','SHOP_MANAGER'],'manager'),'manager');

@@ -11,7 +11,7 @@ test('MySQL + Node.js: phân quyền, mua hàng, kho, hoàn tiền và quản tr
   await t.test('API health và đủ 37 bảng',async()=>{assert.equal((await guest.ok('/health')).database,'connected');const [{n}]=await query('SELECT COUNT(*) n FROM information_schema.tables WHERE table_schema=DATABASE()');assert.equal(n,37);});
   await t.test('Không cho khách gọi API quản lý',async()=>{assert.equal((await guest.call('/manage/products')).status,401);});
   await t.test('Đăng ký khách mới không thể tự nâng quyền',async()=>{await customer.ok('/auth/register',{name:'QA Kiểm thử',email:`qa-${Date.now()}@sole.test`,password:'TestSole@123',role:'SYSTEM_ADMIN'});assert.deepEqual((await customer.ok('/me')).user.roles,['CUSTOMER']);assert.equal((await customer.call('/admin/accounts')).status,403);});
-  await manager.ok('/auth/login',{login:'shop@sole.vn',password:'SoleDemo@123'});await admin.ok('/auth/login',{login:'admin@sole.vn',password:'SoleDemo@123'});
+  manager.area='manager';admin.area='admin';await manager.ok('/auth/login',{login:'shop@sole.vn',password:'SoleDemo@123'});await admin.ok('/auth/login',{login:'admin@sole.vn',password:'SoleDemo@123'});
   await t.test('Chủ shop không có quyền kỹ thuật và ngược lại',async()=>{assert.equal((await manager.call('/admin/accounts')).status,403);assert.equal((await admin.call('/manage/orders')).status,403);});
   const {products}=await customer.ok('/catalog');assert.equal(products.length,12);const p=await customer.ok('/products/'+products[0].id);const v=p.variants.find(x=>x.stock>3);const [before]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);
   let id;

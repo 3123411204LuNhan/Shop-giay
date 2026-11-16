@@ -1,6 +1,6 @@
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { query, fail } from './db.js';
-import { SESSION_AREAS, requestArea, sessionCookieOptions, clearSessionCookie, validSessionToken } from './session-cookie.js';
+import { SESSION_AREAS, requestArea, sessionCookieOptions, clearSessionCookie, validSessionToken, canUseArea } from './session-cookie.js';
 export function hashPassword(password) { const salt = randomBytes(16).toString('hex'); return `${salt}:${scryptSync(password, salt, 64).toString('hex')}`; }
 export function verifyPassword(password, stored) {
   try { const [salt, key] = stored.split(':'); const expected = Buffer.from(key, 'hex'); const actual = scryptSync(password, salt, 64); return expected.length === actual.length && timingSafeEqual(actual, expected); } catch { return false; }
@@ -20,7 +20,7 @@ export async function identify(req, res, next) {
         WHERE p.TokenHash=? AND p.ThuHoiLuc IS NULL AND p.HetHanLuc>UTC_TIMESTAMP() AND t.TrangThai='HOAT_DONG'`, [tokenHash(token)]);
       if (rows[0]) {
         const roles = (await query('SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=?', [rows[0].id])).map(r => r.role);
-        if (roles.includes(SESSION_AREAS[req.sessionArea].role)) req.user = {...rows[0], roles};
+        if (canUseArea(roles,req.sessionArea)) req.user = {...rows[0], roles};
       }
       if (!req.user) clearSessionCookie(req, res);
     }

@@ -13,14 +13,13 @@ export function requestArea(req) {
 }
 
 export function loginArea(roles, requested) {
-  if (roles.includes(SESSION_AREAS[requested].role)) return requested;
-  // The public login can route staff to their own workspace. A workspace login
-  // must never silently replace a session in a different workspace.
-  if (requested === 'customer') {
-    if (roles.includes('SYSTEM_ADMIN')) return 'admin';
-    if (roles.includes('SHOP_MANAGER')) return 'manager';
-  }
-  return null;
+  return canUseArea(roles,requested) ? requested : null;
+}
+
+export function canUseArea(roles, area) {
+  if (!Object.hasOwn(SESSION_AREAS,area)) return false;
+  if (area==='customer' && roles.some(r=>r==='SHOP_MANAGER'||r==='SYSTEM_ADMIN')) return false;
+  return roles.includes(SESSION_AREAS[area].role);
 }
 
 export function sessionCookieOptions(req) {
