@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 
 test('Cùng trình duyệt: admin, chủ shop và khách giữ phiên độc lập',async()=>{
   const jar=new Map();
@@ -20,7 +21,7 @@ test('Cùng trình duyệt: admin, chủ shop và khách giữ phiên độc l�
   assert.equal((await call('manager','/me')).data.user,null);
   const adminId=(await call('admin','/me')).data.user.id;
 
-  assert.equal((await call('customer','/auth/login',{login:'khach@sole.vn',password:'SoleDemo@123'})).status,200);
+  assert.equal((await call('customer','/auth/register',{email:`isolation-${randomUUID()}@example.test`,name:'QA Phiên khách',password:'IsolationTest@123'})).status,200);
   assert.equal((await call('manager','/auth/login',{login:'shop@sole.vn',password:'SoleDemo@123'})).status,200);
   assert.deepEqual((await call('customer','/me')).data.user.roles,['CUSTOMER']);
   assert.deepEqual((await call('manager','/me')).data.user.roles,['SHOP_MANAGER']);

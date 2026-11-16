@@ -3,6 +3,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { query as q, tx, fail, positive, text } from './db.js';
 import { identify, requireUser, role, hashPassword, verifyPassword, createSession, tokenHash, audit } from './auth.js';
 import { SESSION_AREAS, loginArea, clearSessionCookie, validSessionToken } from './session-cookie.js';
+import { requestPasswordReset, verifyResetCode, resetPassword } from './password-reset.js';
 export const router = Router();
 const manager=role(['SHOP_MANAGER']),admin=role(['SYSTEM_ADMIN']);
 const run=fn=>async(req,res,next)=>{try{res.json(await fn(req,res));}catch(e){next(e);}};
@@ -26,14 +27,9 @@ router.post('/auth/register',run(async(r,s)=>{
   await createSession({id},r,s,'customer');return {ok:true,area:'customer'};
 }));
 router.post('/auth/logout',run(async(r,s)=>{const token=r.cookies[SESSION_AREAS[r.sessionArea].cookie];if(validSessionToken(token))await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TokenHash=?',[tokenHash(token)]);clearSessionCookie(r,s);return {ok:true};}));
-router.post('/auth/forgot',run(async r=>{
-  // Local development mailbox: the link is written to .local/mail, never disclosed to public callers.
-  const users=await q('SELECT TaiKhoanID id FROM TaiKhoan WHERE Email=?',[text(r.body.email)]);
-  if(users[0]){const token=randomBytes(32).toString('hex');await q('INSERT INTO DatLaiMatKhau(TaiKhoanID,TokenHash,HetHanLuc) VALUES(?,?,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 20 MINUTE))',[users[0].id,tokenHash(token)]);
-    if(process.env.NODE_ENV!=='production'){const fs=await import('node:fs/promises');await fs.mkdir('.local/mail',{recursive:true});await fs.writeFile(`.local/mail/reset-${Date.now()}.txt`,`${process.env.APP_ORIGIN||'http://localhost:5173'}/?reset=${token}\nLiên kết hết hạn sau 20 phút. Chỉ dành cho hộp thư phát triển cục bộ.`);}}
-  return {message:'Nếu email hợp lệ, hướng dẫn đặt lại mật khẩu sẽ được gửi. Môi trường local dùng hộp thư .local/mail.'};
-}));
-router.post('/auth/reset',run(async r=>{if(String(r.body.password||'').length<8||String(r.body.password).length>128)fail('Mật khẩu cần từ 8 đến 128 ký tự.');await tx(async c=>{const rows=await q('SELECT * FROM DatLaiMatKhau WHERE TokenHash=? AND DaSuDungLuc IS NULL AND HetHanLuc>UTC_TIMESTAMP() FOR UPDATE',[tokenHash(String(r.body.token||''))],c);if(!rows[0])fail('Liên kết không hợp lệ hoặc đã hết hạn.');await q('UPDATE TaiKhoan SET MatKhauHash=?,NgayDoiMatKhau=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[hashPassword(r.body.password),rows[0].TaiKhoanID],c);await q('UPDATE DatLaiMatKhau SET DaSuDungLuc=UTC_TIMESTAMP() WHERE YeuCauID=?',[rows[0].YeuCauID],c);await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[rows[0].TaiKhoanID],c);});return {ok:true};}));
+router.post('/auth/forgot',run(async r=>requestPasswordReset(r.body.email)));
+router.post('/auth/verify-otp',run(async r=>verifyResetCode(r.body)));
+router.post('/auth/reset',run(async r=>resetPassword(r.body)));
 
 const productSelect=`SELECT s.SanPhamID id,s.MaSanPham code,s.TenSanPham name,s.MoTa description,s.GiaBan price,s.DanhMucID categoryId,s.ThuongHieuID brandId,s.TrangThai status,
  d.TenDanhMuc category,t.TenThuongHieu brand,(SELECT DuongDan FROM HinhAnhSanPham h WHERE h.SanPhamID=s.SanPhamID ORDER BY LaAnhChinh DESC,ThuTu LIMIT 1) image,

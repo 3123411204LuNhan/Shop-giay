@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS DatLaiMatKhau (
   YeuCauID bigint NOT NULL AUTO_INCREMENT PRIMARY KEY,
   TaiKhoanID bigint NOT NULL,
   TokenHash binary(32) NOT NULL UNIQUE,
+  MaXacMinhHash binary(32) NULL,
   NgayTao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   HetHanLuc datetime NOT NULL,
   DaSuDungLuc datetime NULL,

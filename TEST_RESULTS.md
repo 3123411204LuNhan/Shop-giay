@@ -44,3 +44,13 @@ Chưa tích hợp cổng thanh toán trực tuyến/email production; ảnh nh�
 - Xóa cookie sai/hết hiệu lực và cookie chung cũ; header khu vực không thay thế kiểm tra vai trò.
 - `npm run check`, `npm run build` thành công; `npm test`: 17 pass, 0 fail.
 - Không đổi schema hoặc mật khẩu MySQL. Sau cập nhật cần đăng nhập lại từng khu vực một lần.
+
+## Cập nhật OTP Gmail — 16/11/2026
+
+- `npm run check` và `npm run build` thành công; `npm test`: 28 pass, 0 fail.
+- Kiểm thử SMTP chấp nhận/từ chối bằng transport giả lập; fallback local không ghi mật khẩu SMTP.
+- Kiểm thử OTP đúng, sai, khóa sau 5 lần, dùng lại OTP/token, ngăn bỏ qua OTP, thu hồi phiên và email không có tài khoản.
+- Kiểm thử trực tiếp giao diện: gửi yêu cầu cho tài khoản QA miền .test, xuất hiện ô nhập OTP, nút gửi lại đếm ngược, mã đúng mở bước đặt mật khẩu.
+- `npm run mail:verify` kết nối và xác thực Gmail SMTP thành công bằng cấu hình riêng trong .env. Lệnh này không gửi email; chưa xác nhận nhận thư thực tế trong Inbox.
+- Migration đã thêm cột MaXacMinhHash mà không xóa dữ liệu, giữ 37 bảng.
+- Kiểm thử phiên khách dùng tài khoản QA riêng, không phụ thuộc mật khẩu mẫu mà người dùng có thể đã đổi.

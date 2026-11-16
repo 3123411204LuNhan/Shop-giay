@@ -105,7 +105,7 @@ Không khởi động container trùng cổng 3306 với MySQL đang chạy. Doc
 - Xem chi tiết, giá, mô tả, đánh giá và lựa chọn size/màu còn hàng.
 - Giỏ hàng: thêm, đổi số lượng, xóa; khách chưa đăng nhập có giỏ trên thiết bị; đăng nhập sẽ gộp vào giỏ tài khoản khi tồn kho còn phù hợp.
 - Đăng ký, đăng nhập, đăng xuất, sửa họ tên/điện thoại/địa chỉ.
-- Quên mật khẩu và đặt lại qua token một lần có thời hạn. Trong môi trường phát triển, liên kết được ghi vào `.local/mail`, không gửi email ra ngoài.
+- Quên mật khẩu bằng OTP 6 số qua Gmail/SMTP; nếu chưa cấu hình hoặc gửi thất bại thì lưu hộp thư `.local/mail`. Xác minh mã trước khi đặt mật khẩu mới.
 - Đặt hàng bằng COD hoặc chuyển khoản; áp mã giảm giá; miễn phí giao hàng từ 1.500.000đ, còn lại 30.000đ.
 - Xem đơn, lịch sử trạng thái; hủy trước khi giao; gửi đánh giá cho đơn hoàn thành.
 - Gửi yêu cầu trả hàng kèm số lượng, lý do và URL ảnh bằng chứng. Yêu cầu đổi size được xử lý bằng trả/hoàn tiền và đặt lại, chưa có giao đổi thay thế tự động.
@@ -191,7 +191,7 @@ Shop-giay/
 - Giá và giảm giá đã chụp trên đơn không thay đổi theo việc sửa sản phẩm hoặc chương trình sau này.
 - Khi chọn nhiều mã, bản hiện tại chỉ nhận **một mã ưu đãi cho một đơn**. Cột kết hợp trong schema được giữ cho mở rộng nhưng chưa có giao diện cộng dồn mã.
 - `rowversion` của SQL Server được chuyển thành `PhienBan bigint` trên MySQL. Các thao tác kho và đơn quan trọng dùng khóa `FOR UPDATE`; đây không phải tính năng rowversion tự động của MySQL.
-- Không có tác vụ tự động hủy đơn hết hạn hay bộ gửi email production. Bản hiện tại không tải file ảnh lên máy chủ; form ảnh nhận URL.
+- Không có tác vụ tự động hủy đơn hết hạn. Gửi OTP email thật cần cấu hình SMTP theo EMAIL_SETUP.md. Bản hiện tại không tải file ảnh lên máy chủ; form ảnh nhận URL.
 
 ## Nguồn ảnh minh họa
 
@@ -208,3 +208,7 @@ Giao diện gửi `X-Sole-Area: customer`, `manager` hoặc `admin` theo khu v�
 Cookie Secure được quyết định theo HTTPS của request, không theo NODE_ENV, để đăng nhập HTTP local vẫn hoạt động với bản build production. Nếu thực sự triển khai sau reverse proxy HTTPS, đặt `TRUST_PROXY_HOPS` theo số proxy tin cậy thực tế; mặc định 0 là không tin header proxy.
 
 Nút “Xem cửa hàng” đã được bỏ khỏi sidebar của chủ shop và admin kỹ thuật.
+
+## OTP Gmail và fallback local
+
+Xem [hướng dẫn gửi OTP](EMAIL_SETUP.md). Bản nâng cấp dùng mã 6 số, hiệu lực 10 phút, tối đa 5 lần nhập sai. Database cũ cần chạy `npm.cmd run db:migrate` một lần; database mới đã có cột cần thiết.
