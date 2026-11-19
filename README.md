@@ -220,3 +220,17 @@ Giỏ của A không được đưa vào localStorage để rồi gộp sang B. 
 Các tab nhận thông báo khi đổi tài khoản và kiểm tra lại phiên khi quay về tab. Request riêng tư có `X-Sole-Account`; nếu tab còn hiển thị A nhưng cookie đã đổi sang B, server trả SESSION_CHANGED và không cập nhật giỏ B. Không tự gửi lại thao tác cũ dưới tài khoản mới.
 
 Tài khoản có vai trò SHOP_MANAGER hoặc SYSTEM_ADMIN không được đăng nhập khu vực khách, kể cả khi còn có cờ CUSTOMER. API giỏ, đặt hàng và đổi/trả của khách cũng chặn tài khoản nhân sự; chủ shop vẫn xem chi tiết đơn qua quyền quản lý.
+
+
+## Cập nhật luồng nghiệp vụ phát triển ngày 18/11/2026
+
+Đọc [Hướng dẫn luồng phát triển](HUONG_DAN_LUONG_PHAT_TRIEN.md) để sử dụng phiếu kho nháp/xác nhận, cảnh báo tồn, kiểm tra tổng tiền trước đặt, tự hết hạn giữ hàng chuyển khoản, đối soát tiền đến muộn, giao thất bại và hoàn tiền có thử lại. Quản lý kiêm kho; admin giữ phạm vi kỹ thuật. Chạy `npm.cmd run db:migrate` trước khi chạy bản mới; không tạo lại database hoặc seed lại.
+
+
+## Giao diện khách hàng ngày 19/11/2026
+
+- Khám phá (`/`): chủ đề theo danh mục và 6 mẫu giày được gợi ý ngẫu nhiên; nút Đổi gợi ý chọn lại. Bấm chủ đề mở trang sản phẩm với bộ lọc tương ứng.
+- Sản phẩm (`/products`): danh sách riêng với tìm kiếm, danh mục, thương hiệu, size, màu, giá và sắp xếp. Bộ lọc nằm trong URL, giữ khi tải lại hoặc dùng nút quay lại của trình duyệt.
+- Running Club (`/running-club`): banner chiến dịch, thông tin giao hàng và mã đang hiệu lực/chưa hết tổng lượt dùng. Hiển thị điều kiện, mức giảm tối đa và hạn áp dụng. Quản lý tiếp tục sửa mã qua mục Khuyến mãi.
+- Sao chép mã hoặc Mua với mã này để chuyển sang sản phẩm, điền sẵn mã vào checkout. Mức giảm chỉ được xác nhận sau khi máy chủ kiểm tra điều kiện.
+- Banner chiến dịch là nội dung giao diện cục bộ; chưa có chức năng quản lý banner riêng trong workspace.

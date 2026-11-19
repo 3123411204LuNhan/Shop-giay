@@ -6,7 +6,7 @@ import { rateLimit } from 'express-rate-limit';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pool, query } from './db.js';
-import { router } from './routes.js';
+import { router,expireUnpaidOrders } from './routes.js';
 const app=express(); const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 app.disable('x-powered-by');
 // Opt in only when an HTTPS reverse proxy with this hop count is in front.
@@ -28,4 +28,7 @@ app.use((err,req,res,next)=>{if(req.method!=='GET')query("INSERT INTO NhatKyHeTh
 if(process.argv.includes('--production')){app.use(express.static(path.join(root,'dist')));app.get('/{*path}',(req,res)=>res.sendFile(path.join(root,'dist/index.html')));}
 else{const {createServer}=await import('vite');const vite=await createServer({root,server:{middlewareMode:true},appType:'spa'});app.use(vite.middlewares);}
 const port=Number(process.env.PORT||5173);const server=app.listen(port,process.env.HOST||'127.0.0.1',()=>console.log(`SOLE STUDIO: http://localhost:${port}`));
-async function stop(){server.close();await pool.end();process.exit(0);}process.on('SIGTERM',stop);process.on('SIGINT',stop);
+let expirationRunning=false;
+const expire=async()=>{if(expirationRunning)return;expirationRunning=true;try{await expireUnpaidOrders();}catch(e){console.error('[Giữ hàng]',e.code||e.message);}finally{expirationRunning=false;}};
+const expirationTimer=setInterval(expire,15000);expirationTimer.unref();void expire();
+async function stop(){clearInterval(expirationTimer);server.close();await pool.end();process.exit(0);}process.on('SIGTERM',stop);process.on('SIGINT',stop);
