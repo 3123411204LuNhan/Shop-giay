@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS TaiKhoan (
   GioiTinh varchar(20) NULL,
   DiaChi varchar(500) NULL,
   AnhDaiDien varchar(1000) NULL,
-  TrangThai varchar(20) NOT NULL DEFAULT 'HOAT_DONG' CHECK (TrangThai IN ('HOAT_DONG','BI_KHOA','VO_HIEU_HOA')),
+  TrangThai varchar(20) NOT NULL DEFAULT 'HOAT_DONG',
+  NgayXoa datetime NULL,
+  CONSTRAINT CK_TaiKhoan_TrangThai CHECK (TrangThai IN ('HOAT_DONG','BI_KHOA')),
   EmailDaXacMinh tinyint NOT NULL DEFAULT 0,
   SoLanDangNhapSai int NOT NULL DEFAULT 0 CHECK (SoLanDangNhapSai >= 0),
   KhoaDenLuc datetime NULL,
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS DanhMuc (
   MoTa varchar(1000) NULL,
   HinhAnh varchar(1000) NULL,
   DangHoatDong tinyint NOT NULL DEFAULT 1,
+  LaBanNhap tinyint NOT NULL DEFAULT 0,
   NgayTao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   NgayCapNhat datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
@@ -83,6 +86,7 @@ CREATE TABLE IF NOT EXISTS ThuongHieu (
   MoTa varchar(1000) NULL,
   HinhAnh varchar(1000) NULL,
   DangHoatDong tinyint NOT NULL DEFAULT 1,
+  LaBanNhap tinyint NOT NULL DEFAULT 0,
   NgayTao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   NgayCapNhat datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;

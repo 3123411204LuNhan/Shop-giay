@@ -34,6 +34,47 @@ test('Luồng phát triển: phiếu kho, hết hạn, COD, giao thất bại, t
     const lookups=await manager.ok('/manage/lookups');
     const p=await manager.ok('/manage/products',{code:'QA-'+randomUUID(),name:'QA luồng kho',price:2000000,categoryId:lookups.categories[0].id,brandId:lookups.brands[0].id,status:'DANG_BAN'});productId=p.id;
     const v=await manager.ok('/manage/variants',{productId,sku:'QA-'+randomUUID(),sizeId:lookups.sizes[0].id,colorId:lookups.colors[0].id});variantId=v.id;
+    await t.test('Công bố, kết thúc, gia hạn và xóa mã nháp trên trang khách',async()=>{
+      const code='QA-'+randomUUID(), day=86400000;
+      const time=offset=>new Date(Date.now()+offset*day).toISOString();
+      const fields={code,name:'Ưu đãi QA',type:'PHAN_TRAM',value:10,minimum:500000,start:time(-2),end:time(-1)};
+      assert.equal((await manager.call('/manage/promotions',{...fields,minimum:-1})).status,400);
+      const {id}=await manager.ok('/manage/promotions',fields);
+      const path='/manage/promotions/'+id;
+      const visible=async()=>(await customer.ok('/promotions')).find(p=>p.code===code);
+      const publishedCode=code+'P';
+      const direct=await manager.ok('/manage/promotions',{...fields,code:publishedCode,end:time(1),status:'DANG_AP_DUNG'});
+      try {
+        const management=(await manager.ok('/manage/promotions')).find(p=>p.id===direct.id);
+        const storefront=(await customer.ok('/promotions')).find(p=>p.code===publishedCode);
+        assert.equal(management.visible,1);
+        for(const field of ['code','name','type','value','minimum','start','end'])assert.equal(storefront[field],management[field]);
+      } finally {
+        await manager.ok('/manage/promotions/'+direct.id,{status:'NHAP'},'PUT');
+        await manager.ok('/manage/promotions/'+direct.id,undefined,'DELETE');
+      }
+      try {
+        assert.equal(await visible(),undefined);
+        const edit={...fields,status:'DANG_AP_DUNG',end:time(2),name:'Gia hạn QA',minimum:150000};
+        for(const bad of [{end:fields.end},{end:time(-3)},{minimum:-1},{value:-1},{value:101}]){
+          assert.equal((await manager.call(path,{...edit,...bad},'PUT')).status,400);
+        }
+        await manager.ok(path,edit,'PUT');
+        const published=await visible();
+        assert.equal(published.name,edit.name);
+        assert.equal(published.minimum,edit.minimum);
+        assert.equal(published.value,10);
+        assert.equal((await manager.call(path,undefined,'DELETE')).status,409);
+        await manager.ok(path,{status:'KET_THUC'},'PUT');
+        assert.equal(await visible(),undefined);
+        await manager.ok(path,{...edit,start:time(1)},'PUT');
+        assert.equal(await visible(),undefined);
+      } finally {
+        await manager.ok(path,{status:'NHAP'},'PUT');
+        await manager.ok(path,undefined,'DELETE');
+      }
+      assert.ok(!(await manager.ok('/manage/promotions')).some(p=>p.id===id));
+    });
     await t.test('Phiếu nháp không tăng kho; sửa được; xác nhận đồng thời chỉ tăng một lần',async()=>{
       const body={requestId:randomUUID(),type:'NHAP',supplier:'Nhà cung cấp QA',reference:'QA-'+randomUUID(),reason:'Nhập thử nghiệp vụ',items:[{variantId,quantity:10,cost:1000000}]};
       const a=await manager.ok('/manage/receipts',body);receiptId=a.id;assert.equal((await manager.ok('/manage/receipts',body)).id,a.id);assert.deepEqual(await stock(),{physical:0,reserved:0});
@@ -43,6 +84,26 @@ test('Luồng phát triển: phiếu kho, hết hạn, COD, giao thất bại, t
       assert.equal((await manager.call('/manage/receipts/'+a.id,body,'PUT')).status,400);
       assert.equal((await manager.call('/manage/receipts',{...body,requestId:randomUUID()})).status,409);
       assert.equal((await admin.call('/manage/receipts')).status,403);
+    });
+    await t.test('Mức trần phần trăm, bỏ trần và giảm cố định khớp với báo giá',async()=>{
+      const fields={code:'QA-'+randomUUID(),name:'QA mức trần',type:'PHAN_TRAM',value:10,minimum:0,maximum:120000,status:'DANG_AP_DUNG',start:new Date(Date.now()-60000).toISOString(),end:new Date(Date.now()+86400000).toISOString()};
+      const {id}=await manager.ok('/manage/promotions',fields);
+      const path='/manage/promotions/'+id;
+      const quote=()=>customer.ok('/checkout/quote',{method:'COD',promo:fields.code});
+      try{
+        await customer.ok('/cart',{variantId,quantity:1},'PUT');
+        assert.equal((await quote()).discount,120000);
+        assert.equal((await manager.ok('/manage/promotions')).find(p=>p.id===id).maximum,120000);
+        for(const maximum of [0,-1])assert.equal((await manager.call(path,{...fields,maximum},'PUT')).status,400);
+        await manager.ok(path,{...fields,maximum:''},'PUT');
+        assert.equal((await quote()).discount,200000);
+        await manager.ok(path,{...fields,type:'SO_TIEN',value:3000000},'PUT');
+        assert.equal((await quote()).discount,2000000);
+        assert.equal((await customer.ok('/promotions')).find(p=>p.code===fields.code).maximum,null);
+      }finally{
+        await manager.ok(path,{status:'NHAP'},'PUT');
+        await manager.ok(path,undefined,'DELETE');
+      }
     });
     await t.test('Hủy nháp không đổi kho; điều chỉnh âm quá tồn bị hoàn tác toàn bộ',async()=>{
       const body={requestId:randomUUID(),type:'DIEU_CHINH',reason:'QA kiểm kê',items:[{variantId,quantity:-13}]};

@@ -1,0 +1,34 @@
+.staff-account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: #edf0df;
+  cursor: pointer;
+}
+.staff-account-menu {
+  position: fixed;
+  inset: 58px 20px auto auto;
+  margin: 0;
+  padding: 14px;
+  min-width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 8px 28px #26301926;
+}
+.staff-account-menu:popover-open { display: grid; gap: 8px; }
+.staff-account-menu small { color: #637054; }
+.staff-account-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.staff-account-menu button:hover { background: #f1f4ea; }

@@ -2,6 +2,9 @@ import {query} from './db.js';
 
 // Additive and repeatable: existing orders, stock movements and confirmed receipts are preserved.
 export const workflowColumns = {
+  DanhMuc: { LaBanNhap: 'tinyint NOT NULL DEFAULT 0' },
+  ThuongHieu: { LaBanNhap: 'tinyint NOT NULL DEFAULT 0' },
+  TaiKhoan: { NgayXoa: 'datetime NULL' },
   DonHang: {
     DonViVanChuyen: 'varchar(150) NULL', MaVanDon: 'varchar(100) NULL',
     TrangThaiGiaoHang: "varchar(20) NOT NULL DEFAULT 'CHUA_GIAO'",
@@ -25,7 +28,9 @@ export async function migrateWorkflows() {
       if (!n) await query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
     }
   }
+  await query("UPDATE TaiKhoan SET TrangThai='BI_KHOA' WHERE TrangThai='VO_HIEU_HOA'");
   for(const [table,name,clause] of [
+    ['TaiKhoan','CK_TaiKhoan_TrangThai',"CHECK (TrangThai IN ('HOAT_DONG','BI_KHOA'))"],
     ['PhieuKho','CK_PhieuKho_TrangThai',"CHECK (TrangThai IN ('NHAP','DA_XAC_NHAN','DA_HUY'))"],
     ['DonHang','CK_DonHang_GiaoHang',"CHECK (TrangThaiGiaoHang IN ('CHUA_GIAO','DANG_GIAO','GIAO_THAT_BAI','CHO_HOAN_VE','DA_NHAN_HOAN','DA_GIAO'))"],
     ['PhieuKho','FK_PhieuKho_XacNhan','FOREIGN KEY (NguoiXacNhanID) REFERENCES TaiKhoan(TaiKhoanID)'],

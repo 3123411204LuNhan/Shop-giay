@@ -1,3 +1,4 @@
+import {createPromotion,updatePromotion,deleteDraft} from './promotions.js';
 import { Router } from 'express';
 import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { query as q, tx, fail, positive, text } from './db.js';
@@ -25,7 +26,7 @@ router.use((r,s,next)=>{
 router.get('/store-settings',run(async()=>publicStoreConfig()));
 router.get('/me',run(async r=>({user:r.user||null})));
 router.post('/auth/login',run(async(r,s)=>{
-  const users=await q("SELECT TaiKhoanID id,MatKhauHash hash,TrangThai status,KhoaDenLuc locked FROM TaiKhoan WHERE Email=? OR TenDangNhap=?",[text(r.body.login),text(r.body.login)]);
+  const users=await q("SELECT TaiKhoanID id,MatKhauHash hash,TrangThai status,KhoaDenLuc locked FROM TaiKhoan WHERE NgayXoa IS NULL AND (Email=? OR TenDangNhap=?)",[text(r.body.login),text(r.body.login)]);
   const u=users[0];if(!u||String(r.body.password||'').length>128||!verifyPassword(String(r.body.password||''),u.hash)){if(u)await q('UPDATE TaiKhoan SET SoLanDangNhapSai=SoLanDangNhapSai+1,KhoaDenLuc=IF(SoLanDangNhapSai>=5,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 15 MINUTE),KhoaDenLuc) WHERE TaiKhoanID=?',[u.id]);fail('Email hoặc mật khẩu không đúng.',401);}
   if(u.status!=='HOAT_DONG'||(u.locked&&new Date(u.locked)>new Date()))fail('Tài khoản đang bị khóa.',403);
   const roles=(await q('SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=?',[u.id])).map(x=>x.role);
@@ -64,7 +65,8 @@ router.get('/products/:id',run(async r=>{
   p.variants=await q('SELECT b.BienTheID id,b.SKU sku,kc.GiaTri size,m.TenMau color,m.MaHex hex,COALESCE(b.GiaBanRieng,?) price,COALESCE(k.SoLuongKhaDung,0) stock FROM BienTheSanPham b JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID LEFT JOIN TonKho k ON k.BienTheID=b.BienTheID WHERE b.SanPhamID=? AND b.DangKinhDoanh=1 ORDER BY kc.ThuTu',[p.price,p.id]);
   p.reviews=await q("SELECT g.SoSao stars,g.NoiDung content,t.HoTen name,g.NgayTao date FROM DanhGia g JOIN TaiKhoan t ON t.TaiKhoanID=g.KhachHangID JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=g.ChiTietDonHangID JOIN BienTheSanPham b ON b.BienTheID=ct.BienTheID WHERE b.SanPhamID=? AND g.TrangThai='HIEN_THI' ORDER BY g.NgayTao DESC",[p.id]);return p;
 }));
-router.get('/promotions',run(async()=>await q("SELECT k.MaKhuyenMai code,k.TenKhuyenMai name,k.HinhThuc type,k.GiaTri value,k.GiaTriDonToiThieu minimum,k.GiamToiDa maximum,k.PhamVi scope,k.BatDauLuc start,k.KetThucLuc end,k.GioiHanMoiKhach perCustomer FROM KhuyenMai k WHERE k.TrangThai='DANG_AP_DUNG' AND k.BatDauLuc<=UTC_TIMESTAMP() AND k.KetThucLuc>UTC_TIMESTAMP() AND (k.GioiHanLuotDung IS NULL OR (SELECT COUNT(*) FROM KhuyenMaiDonHang kd JOIN DonHang d ON d.DonHangID=kd.DonHangID WHERE kd.KhuyenMaiID=k.KhuyenMaiID AND d.TrangThai<>'DA_HUY')<k.GioiHanLuotDung) ORDER BY k.KetThucLuc,k.KhuyenMaiID")));
+const publicPromotionCondition = "k.TrangThai='DANG_AP_DUNG' AND k.BatDauLuc<=UTC_TIMESTAMP() AND k.KetThucLuc>UTC_TIMESTAMP() AND (k.GioiHanLuotDung IS NULL OR (SELECT COUNT(*) FROM KhuyenMaiDonHang kd JOIN DonHang d ON d.DonHangID=kd.DonHangID WHERE kd.KhuyenMaiID=k.KhuyenMaiID AND d.TrangThai<>'DA_HUY')<k.GioiHanLuotDung)";
+router.get('/promotions',run(async()=>await q("SELECT k.MaKhuyenMai code,k.TenKhuyenMai name,k.HinhThuc type,k.GiaTri value,k.GiaTriDonToiThieu minimum,IF(k.HinhThuc='PHAN_TRAM',k.GiamToiDa,NULL) maximum,k.PhamVi scope,k.BatDauLuc start,k.KetThucLuc end,k.GioiHanMoiKhach perCustomer FROM KhuyenMai k WHERE "+publicPromotionCondition+" ORDER BY k.KetThucLuc,k.KhuyenMaiID")));
 
 router.use(requireUser);
 router.use((r,s,next)=>{
@@ -88,7 +90,7 @@ async function checkoutSnapshot(r,c){
     if(r.body.promo){[promo]=await q("SELECT * FROM KhuyenMai WHERE MaKhuyenMai=? AND TrangThai='DANG_AP_DUNG' AND BatDauLuc<=UTC_TIMESTAMP() AND KetThucLuc>UTC_TIMESTAMP() FOR UPDATE",[text(r.body.promo,50)],c);if(!promo||total<promo.GiaTriDonToiThieu)fail('Mã ưu đãi không hợp lệ hoặc đơn chưa đạt điều kiện.');
       const [used]=await q("SELECT COUNT(*) n,SUM(d.KhachHangID=?) own FROM KhuyenMaiDonHang k JOIN DonHang d ON d.DonHangID=k.DonHangID WHERE k.KhuyenMaiID=? AND d.TrangThai<>'DA_HUY'",[r.user.id,promo.KhuyenMaiID],c);if((promo.GioiHanLuotDung&&used.n>=promo.GioiHanLuotDung)||(promo.GioiHanMoiKhach&&used.own>=promo.GioiHanMoiKhach))fail('Mã ưu đãi đã hết lượt sử dụng.');
       if(promo.PhamVi!=='TOAN_BO'){const map={SAN_PHAM:['KhuyenMaiSanPham','SanPhamID'],DANH_MUC:['KhuyenMaiDanhMuc','DanhMucID'],THUONG_HIEU:['KhuyenMaiThuongHieu','ThuongHieuID']}[promo.PhamVi];const ids=await q(`SELECT ${map[1]} id FROM ${map[0]} WHERE KhuyenMaiID=?`,[promo.KhuyenMaiID],c);eligible=items.filter(x=>ids.some(y=>y.id===x[map[1]]));}
-      const base=eligible.reduce((s,x)=>s+x.price*x.SoLuong,0);discount=Math.min(base,Math.round(promo.HinhThuc==='PHAN_TRAM'?base*promo.GiaTri/100:promo.GiaTri),promo.GiamToiDa??Infinity);if(!discount)fail('Mã ưu đãi không áp dụng cho sản phẩm trong giỏ.');}
+      const base=eligible.reduce((s,x)=>s+x.price*x.SoLuong,0);const reduction=promo.HinhThuc==='PHAN_TRAM'?Math.min(Math.round(base*promo.GiaTri/100),promo.GiamToiDa??Infinity):promo.GiaTri;discount=Math.min(base,reduction);if(!discount)fail('Mã ưu đãi không áp dụng cho sản phẩm trong giỏ.');}
     if(!['COD','BANK_TRANSFER'].includes(r.body.method||'COD'))fail('Hiện chỉ hỗ trợ COD và chuyển khoản đối soát thủ công.');
     const method=(await q('SELECT PhuongThucID id FROM PhuongThucThanhToan WHERE MaPhuongThuc=? AND DangHoatDong=1',[r.body.method||'COD'],c))[0];if(!method)fail('Phương thức thanh toán không hợp lệ.');
     const shipping=total>=1500000?0:30000;
@@ -154,15 +156,47 @@ router.get('/returns/:id',run(async r=>{
 installOperations(router,{manager,run});
 
 router.get('/manage/products',manager,run(async()=>await q(productSelect+' ORDER BY s.SanPhamID DESC')));
-router.get('/manage/lookups',manager,run(async()=>({categories:await q('SELECT DanhMucID id,TenDanhMuc name,DangHoatDong active FROM DanhMuc'),brands:await q('SELECT ThuongHieuID id,TenThuongHieu name,DangHoatDong active FROM ThuongHieu'),sizes:await q('SELECT KichCoID id,GiaTri name FROM KichCo ORDER BY ThuTu'),colors:await q('SELECT MauSacID id,TenMau name FROM MauSac')})));
+router.get('/manage/lookups',manager,run(async()=>({categories:await q('SELECT DanhMucID id,TenDanhMuc name,DangHoatDong active,LaBanNhap draft FROM DanhMuc'),brands:await q('SELECT ThuongHieuID id,TenThuongHieu name,DangHoatDong active,LaBanNhap draft FROM ThuongHieu'),sizes:await q('SELECT KichCoID id,GiaTri name FROM KichCo ORDER BY ThuTu'),colors:await q('SELECT MauSacID id,TenMau name FROM MauSac')})));
 router.post('/manage/products',manager,run(async r=>await tx(async c=>{const a=await q('INSERT INTO SanPham(MaSanPham,TenSanPham,MoTa,GiaBan,DanhMucID,ThuongHieuID,TrangThai,NguoiTaoID) VALUES(?,?,?,?,?,?,?,?)',[required(r.body.code,'mã sản phẩm'),required(r.body.name,'tên sản phẩm'),text(r.body.description,8000),price(r.body.price),positive(r.body.categoryId),positive(r.body.brandId),r.body.status||'DANG_BAN',r.user.id],c);if(r.body.image)await q('INSERT INTO HinhAnhSanPham(SanPhamID,DuongDan,LaAnhChinh) VALUES(?,?,1)',[a.insertId,text(r.body.image,1000)],c);await audit(r.user,'TAO_SAN_PHAM','SanPham',a.insertId,r.body.name,c);return {id:a.insertId};})));
 router.put('/manage/products/:id',manager,run(async r=>{await tx(async c=>{await q('UPDATE SanPham SET TenSanPham=?,MoTa=?,GiaBan=?,DanhMucID=?,ThuongHieuID=?,TrangThai=?,NgayCapNhat=UTC_TIMESTAMP(),PhienBan=PhienBan+1 WHERE SanPhamID=?',[required(r.body.name,'tên'),text(r.body.description,8000),price(r.body.price),positive(r.body.categoryId),positive(r.body.brandId),r.body.status,positive(r.params.id)],c);await audit(r.user,'SUA_SAN_PHAM','SanPham',r.params.id,r.body.name,c);});return {ok:true};}));
 router.get('/manage/variants',manager,run(async()=>await q(`SELECT b.BienTheID id,b.SanPhamID productId,b.KichCoID sizeId,b.MauSacID colorId,b.GiaBanRieng price,b.SKU sku,s.TenSanPham name,kc.GiaTri size,m.TenMau color,b.DangKinhDoanh active,k.SoLuongTon stock,k.SoLuongDaPhanBo reserved,k.SoLuongKhaDung available,k.MucCanhBao warning FROM BienTheSanPham b JOIN SanPham s ON s.SanPhamID=b.SanPhamID JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID JOIN TonKho k ON k.BienTheID=b.BienTheID ORDER BY s.SanPhamID,b.BienTheID`)));
 router.post('/manage/variants',manager,run(async r=>await tx(async c=>{const a=await q('INSERT INTO BienTheSanPham(SanPhamID,SKU,KichCoID,MauSacID,GiaBanRieng) VALUES(?,?,?,?,?)',[positive(r.body.productId),required(r.body.sku,'SKU'),positive(r.body.sizeId),positive(r.body.colorId),r.body.price?price(r.body.price):null],c);await q('INSERT INTO TonKho(BienTheID) VALUES(?)',[a.insertId],c);await audit(r.user,'TAO_BIEN_THE','BienTheSanPham',a.insertId,r.body.sku,c);return {id:a.insertId};})));
 router.put('/manage/variants/:id',manager,run(async r=>{await tx(async c=>{const [old]=await q('SELECT * FROM BienTheSanPham WHERE BienTheID=? FOR UPDATE',[positive(r.params.id)],c);if(!old)fail('Không có biến thể.');if(r.body.sizeId&&r.body.colorId){const [{n}]=await q('SELECT COUNT(*) n FROM ChiTietDonHang WHERE BienTheID=?',[old.BienTheID],c);if(n&&(Number(r.body.sizeId)!==old.KichCoID||Number(r.body.colorId)!==old.MauSacID))fail('Biến thể đã giao dịch không được đổi size/màu; hãy tạo biến thể mới.');await q('UPDATE BienTheSanPham SET KichCoID=?,MauSacID=?,GiaBanRieng=? WHERE BienTheID=?',[positive(r.body.sizeId),positive(r.body.colorId),r.body.price?price(r.body.price):null,old.BienTheID],c);}await q('UPDATE BienTheSanPham SET DangKinhDoanh=?,NgayCapNhat=UTC_TIMESTAMP() WHERE BienTheID=?',[r.body.active?1:0,old.BienTheID],c);await audit(r.user,'AN_HIEN_BIEN_THE','BienTheSanPham',r.params.id,String(!!r.body.active),c);});return {ok:true};}));
+function taxonomyState(body,defaultActive){
+ const status=body.status??((body.active??defaultActive)?'HOAT_DONG':'AN');
+ if(!['NHAP','HOAT_DONG','AN'].includes(status))fail('Trạng thái không hợp lệ.');
+ return [Number(status==='HOAT_DONG'),Number(status==='NHAP')];
+}
+async function deleteCatalogDraft(r,table,col){
+ const id=positive(r.params.id);
+ return tx(async c=>{
+   const product=table==='SanPham';
+   const flag=product?"TrangThai='NHAP'":"LaBanNhap=1";
+   const [item]=await q(`SELECT (${flag}) draft FROM ${table} WHERE ${col}=? FOR UPDATE`,[id],c);
+   if(!item)fail('Không tìm thấy mục cần xóa.',404);
+   if(!item.draft)fail('Chỉ được xóa bản nháp.',409);
+   try{
+     if(product){
+       const stocks=await q('SELECT k.SoLuongTon,k.SoLuongDaPhanBo FROM BienTheSanPham b JOIN TonKho k ON k.BienTheID=b.BienTheID WHERE b.SanPhamID=? FOR UPDATE',[id],c);
+       if(stocks.some(k=>k.SoLuongTon||k.SoLuongDaPhanBo))fail('Sản phẩm còn tồn kho hoặc đang giữ hàng.',409);
+       await q('DELETE FROM HinhAnhSanPham WHERE SanPhamID=?',[id],c);
+       await q('DELETE k FROM TonKho k JOIN BienTheSanPham b ON b.BienTheID=k.BienTheID WHERE b.SanPhamID=?',[id],c);
+       await q('DELETE FROM BienTheSanPham WHERE SanPhamID=?',[id],c);
+     }
+     await q(`DELETE FROM ${table} WHERE ${col}=?`,[id],c);
+   }catch(error){
+     if(error.code==='ER_ROW_IS_REFERENCED_2')fail('Bản nháp đang được tham chiếu trong cửa hàng nên chưa thể xóa.',409);
+     throw error;
+   }
+   await audit(r.user,'XOA_BAN_NHAP',table,id,'Xóa bản nháp',c);
+   return {ok:true};
+ });
+}
+router.delete('/manage/products/:id',manager,run(r=>deleteCatalogDraft(r,'SanPham','SanPhamID')));
 for(const [route,table,col]of [['categories','DanhMuc','DanhMucID'],['brands','ThuongHieu','ThuongHieuID']]){
- router.post('/manage/'+route,manager,run(async r=>{const a=await q(`INSERT INTO ${table}(Ten${table},MoTa) VALUES(?,?)`,[required(r.body.name,'tên'),text(r.body.description)]);await audit(r.user,'TAO_DANH_MUC',table,a.insertId,r.body.name);return {id:a.insertId};}));
- router.put('/manage/'+route+'/:id',manager,run(async r=>{await q(`UPDATE ${table} SET Ten${table}=?,DangHoatDong=?,NgayCapNhat=UTC_TIMESTAMP() WHERE ${col}=?`,[required(r.body.name,'tên'),r.body.active?1:0,positive(r.params.id)]);await audit(r.user,'SUA_DANH_MUC',table,r.params.id,r.body.name);return {ok:true};}));
+ router.post('/manage/'+route,manager,run(async r=>{const a=await q(`INSERT INTO ${table}(Ten${table},MoTa,DangHoatDong,LaBanNhap) VALUES(?,?,?,?)`,[required(r.body.name,'tên'),text(r.body.description),...taxonomyState(r.body,true)]);await audit(r.user,'TAO_DANH_MUC',table,a.insertId,r.body.name);return {id:a.insertId};}));
+ router.delete('/manage/'+route+'/:id',manager,run(r=>deleteCatalogDraft(r,table,col)));
+ router.put('/manage/'+route+'/:id',manager,run(async r=>{await q(`UPDATE ${table} SET Ten${table}=?,DangHoatDong=?,LaBanNhap=?,NgayCapNhat=UTC_TIMESTAMP() WHERE ${col}=?`,[required(r.body.name,'tên'),...taxonomyState(r.body,false),positive(r.params.id)]);await audit(r.user,'SUA_DANH_MUC',table,r.params.id,r.body.name);return {ok:true};}));
 }
 router.post('/manage/stock',manager,run(async()=>fail('Vui lòng lập phiếu kho nháp rồi xác nhận tại mục Phiếu kho.',409)));
 router.get('/manage/orders',manager,run(async()=>await q(ordersSql+' ORDER BY d.DonHangID DESC')));
@@ -185,10 +219,11 @@ router.post('/manage/payments/:id/confirm',manager,run(async r=>{await tx(async 
   const proof=required(r.body.proof,'bằng chứng thu tiền');await q("UPDATE ThanhToan SET TrangThai='DA_XAC_NHAN',NgayXacNhan=UTC_TIMESTAMP(),NguoiXacNhanID=?,BangChung=? WHERE ThanhToanID=?",[r.user.id,proof,p.ThanhToanID],c);
   await q('UPDATE DonHang SET HanThanhToan=NULL WHERE DonHangID=?',[d.DonHangID],c);await audit(r.user,'XAC_NHAN_THU','ThanhToan',p.ThanhToanID,proof,c);
 });return {ok:true};}));
-router.get('/manage/promotions',manager,run(async()=>await q('SELECT KhuyenMaiID id,MaKhuyenMai code,TenKhuyenMai name,HinhThuc type,GiaTri value,GiaTriDonToiThieu minimum,TrangThai status,BatDauLuc start,KetThucLuc end FROM KhuyenMai ORDER BY KhuyenMaiID DESC')));
-router.post('/manage/promotions',manager,run(async r=>{const value=price(r.body.value);if(!['PHAN_TRAM','SO_TIEN'].includes(r.body.type)||(r.body.type==='PHAN_TRAM'&&value>100))fail('Giá trị ưu đãi không hợp lệ.');const a=await q("INSERT INTO KhuyenMai(MaKhuyenMai,TenKhuyenMai,HinhThuc,GiaTri,GiaTriDonToiThieu,PhamVi,BatDauLuc,KetThucLuc,NguoiTaoID) VALUES(?,?,?,?,?,'TOAN_BO',?,?,?)",[required(r.body.code,'mã'),required(r.body.name,'tên'),r.body.type,value,Number(r.body.minimum)||0,required(r.body.start,'ngày bắt đầu'),required(r.body.end,'ngày kết thúc'),r.user.id]);await q("INSERT INTO LichSuKhuyenMai(KhuyenMaiID,NguoiThucHienID,HanhDong,NoiDung) VALUES(?,?,'TAO',?)",[a.insertId,r.user.id,r.body.name]);return {id:a.insertId};}));
-router.put('/manage/promotions/:id',manager,run(async r=>{if(!['NHAP','DANG_AP_DUNG','KET_THUC'].includes(r.body.status))fail('Trạng thái không hợp lệ.');await tx(async c=>{const [p]=await q('SELECT * FROM KhuyenMai WHERE KhuyenMaiID=? FOR UPDATE',[positive(r.params.id)],c);if(!p)fail('Không có chương trình.');if(r.body.status==='DANG_AP_DUNG'&&new Date(p.KetThucLuc)<=new Date())fail('Chương trình đã hết hạn.');if(r.body.name){const value=price(r.body.value);if(!['PHAN_TRAM','SO_TIEN'].includes(r.body.type)||(r.body.type==='PHAN_TRAM'&&value>100))fail('Giá trị giảm không hợp lệ.');await q('UPDATE KhuyenMai SET TenKhuyenMai=?,HinhThuc=?,GiaTri=?,GiaTriDonToiThieu=? WHERE KhuyenMaiID=?',[required(r.body.name,'tên'),r.body.type,value,Math.max(0,Number(r.body.minimum)||0),p.KhuyenMaiID],c);}await q('UPDATE KhuyenMai SET TrangThai=?,NgayCapNhat=UTC_TIMESTAMP() WHERE KhuyenMaiID=?',[r.body.status,p.KhuyenMaiID],c);await q('INSERT INTO LichSuKhuyenMai(KhuyenMaiID,NguoiThucHienID,HanhDong,NoiDung) VALUES(?,?,?,?)',[p.KhuyenMaiID,r.user.id,r.body.status,'Cập nhật trạng thái chương trình'],c);});return {ok:true};}));
-router.get('/manage/customers',manager,run(async()=>await q("SELECT t.TaiKhoanID id,t.HoTen name,t.Email email,t.SoDienThoai phone,COUNT(d.DonHangID) orders,COALESCE(SUM(d.TongThanhToan),0) total FROM TaiKhoan t JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID AND v.MaVaiTro='CUSTOMER' LEFT JOIN DonHang d ON d.KhachHangID=t.TaiKhoanID GROUP BY t.TaiKhoanID ORDER BY t.TaiKhoanID")));
+router.get('/manage/promotions',manager,run(async()=>await q('SELECT KhuyenMaiID id,MaKhuyenMai code,TenKhuyenMai name,HinhThuc type,GiaTri value,GiaTriDonToiThieu minimum,IF(HinhThuc=\'PHAN_TRAM\',GiamToiDa,NULL) maximum,TrangThai status,BatDauLuc start,KetThucLuc end,('+publicPromotionCondition+') visible FROM KhuyenMai k ORDER BY KhuyenMaiID DESC')));
+router.post('/manage/promotions',manager,run(createPromotion));
+router.put('/manage/promotions/:id',manager,run(updatePromotion));
+router.delete('/manage/promotions/:id',manager,run(deleteDraft));
+router.get('/manage/customers',manager,run(async()=>await q("SELECT t.TaiKhoanID id,t.HoTen name,t.Email email,t.SoDienThoai phone,COUNT(d.DonHangID) orders,COALESCE(SUM(d.TongThanhToan),0) total FROM TaiKhoan t JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID AND v.MaVaiTro='CUSTOMER' LEFT JOIN DonHang d ON d.KhachHangID=t.TaiKhoanID WHERE t.NgayXoa IS NULL GROUP BY t.TaiKhoanID ORDER BY t.TaiKhoanID")));
 router.get('/manage/returns',manager,run(async()=>await q('SELECT y.YeuCauDoiTraID id,y.MaYeuCau code,y.LoaiYeuCau type,y.LyDo reason,y.TrangThai status,y.NgayTao date,t.HoTen name,ct.TenSanPhamLucMua product,c.SoLuongYeuCau quantity,c.SoLuongBanLai restocked,c.TienHoanDuocDuyet refund,(SELECT DuongDan FROM HinhAnhDoiTra h WHERE h.YeuCauDoiTraID=y.YeuCauDoiTraID LIMIT 1) image FROM YeuCauDoiTra y JOIN TaiKhoan t ON t.TaiKhoanID=y.KhachHangID JOIN ChiTietDoiTra c ON c.YeuCauDoiTraID=y.YeuCauDoiTraID JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID ORDER BY y.YeuCauDoiTraID DESC')));
 router.post('/manage/returns/:id/action',manager,run(async r=>{await tx(async c=>{const id=positive(r.params.id),action=r.body.action;const [y]=await q('SELECT * FROM YeuCauDoiTra WHERE YeuCauDoiTraID=? FOR UPDATE',[id],c);if(!y)fail('Không có yêu cầu.');const lines=await q('SELECT c.*,ct.BienTheID,ct.SoLuong bought,ct.ThanhTien paid FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=? FOR UPDATE',[id],c);let status;
   if(['approve','reject'].includes(action)){if(y.TrangThai!=='CHO_DUYET')fail('Yêu cầu đã được duyệt.');status=action==='approve'?'DA_DUYET':'TU_CHOI';if(action==='approve')for(const l of lines){await q('UPDATE ChiTietDoiTra SET SoLuongDuyet=SoLuongYeuCau,TienHoanDuocDuyet=? WHERE ChiTietDoiTraID=?',[Math.floor(l.paid*l.SoLuongYeuCau/l.bought),l.ChiTietDoiTraID],c);}await q('UPDATE YeuCauDoiTra SET NguoiDuyetID=?,NgayDuyet=UTC_TIMESTAMP(),LyDoXuLy=? WHERE YeuCauDoiTraID=?',[r.user.id,required(r.body.reason,'lý do xử lý'),id],c);}
@@ -206,14 +241,45 @@ router.get('/manage/reports',manager,run(async r=>{
  return {from,to,income:income.value,refund:refund.value,revenue:income.value-refund.value,orders:await q('SELECT TrangThai status,COUNT(*) count FROM DonHang WHERE NgayDat>=? AND NgayDat<? GROUP BY TrangThai',args),daily:await q("SELECT DATE(CONVERT_TZ(NgayXacNhan,'+00:00','+07:00')) day,SUM(SoTien) amount FROM ThanhToan WHERE TrangThai='DA_XAC_NHAN' AND NgayXacNhan>=? AND NgayXacNhan<? GROUP BY DATE(CONVERT_TZ(NgayXacNhan,'+00:00','+07:00'))",args),top:await q("SELECT ct.TenSanPhamLucMua name,SUM(ct.SoLuong) quantity,SUM(ct.ThanhTien) amount FROM ChiTietDonHang ct JOIN DonHang d ON d.DonHangID=ct.DonHangID WHERE d.TrangThai='HOAN_THANH' AND d.NgayHoanThanh>=? AND d.NgayHoanThanh<? GROUP BY ct.TenSanPhamLucMua ORDER BY quantity DESC LIMIT 5",args),lowStock:(await q('SELECT COUNT(*) n FROM TonKho WHERE SoLuongKhaDung<=MucCanhBao'))[0].n};
 }));
 
-router.get('/admin/accounts',admin,run(async()=>await q("SELECT t.TaiKhoanID id,t.HoTen name,t.Email email,t.TenDangNhap username,t.SoDienThoai phone,t.TrangThai status,t.NgayTao date,GROUP_CONCAT(v.MaVaiTro) roles FROM TaiKhoan t LEFT JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID LEFT JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID GROUP BY t.TaiKhoanID ORDER BY t.TaiKhoanID")));
-router.post('/admin/accounts',admin,run(async r=>{const password=String(r.body.password||'');if(password.length<8||password.length>128)fail('Mật khẩu cần từ 8 đến 128 ký tự.');if(!['CUSTOMER','SHOP_MANAGER','SYSTEM_ADMIN'].includes(r.body.role))fail('Vai trò không hợp lệ.');return await tx(async c=>{const email=required(r.body.email,'email');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail('Email không hợp lệ.');const a=await q('INSERT INTO TaiKhoan(TenDangNhap,Email,MatKhauHash,HoTen) VALUES(?,?,?,?)',[email,email,hashPassword(password),required(r.body.name,'họ tên')],c);await q('INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID,NguoiGanID) SELECT ?,VaiTroID,? FROM VaiTro WHERE MaVaiTro=?',[a.insertId,r.user.id,r.body.role],c);await audit(r.user,'TAO_TAI_KHOAN','TaiKhoan',a.insertId,r.body.role,c);return {id:a.insertId};});}));
-router.put('/admin/accounts/:id',admin,run(async r=>{const id=positive(r.params.id);if(id===r.user.id)fail('Không tự sửa vai trò hoặc khóa tài khoản đang dùng.');if(!['HOAT_DONG','BI_KHOA','VO_HIEU_HOA'].includes(r.body.status)||!['CUSTOMER','SHOP_MANAGER','SYSTEM_ADMIN'].includes(r.body.role))fail('Trạng thái hoặc vai trò không hợp lệ.');await tx(async c=>{
+router.get('/admin/accounts',admin,run(async()=>await q("SELECT t.TaiKhoanID id,t.HoTen name,t.Email email,t.TenDangNhap username,t.SoDienThoai phone,t.TrangThai status,t.NgayTao date,GROUP_CONCAT(v.MaVaiTro) roles FROM TaiKhoan t LEFT JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID LEFT JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE t.NgayXoa IS NULL GROUP BY t.TaiKhoanID ORDER BY t.TaiKhoanID")));
+router.post('/admin/accounts',admin,run(async r=>{const password=String(r.body.password||'');if(password.length<8||password.length>128)fail('Mật khẩu cần từ 8 đến 128 ký tự.');if(!['CUSTOMER','SHOP_MANAGER'].includes(r.body.role))fail('Chỉ được tạo tài khoản khách hàng hoặc quản lý shop.');return await tx(async c=>{const email=required(r.body.email,'email');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail('Email không hợp lệ.');const a=await q('INSERT INTO TaiKhoan(TenDangNhap,Email,MatKhauHash,HoTen) VALUES(?,?,?,?)',[email,email,hashPassword(password),required(r.body.name,'họ tên')],c);await q('INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID,NguoiGanID) SELECT ?,VaiTroID,? FROM VaiTro WHERE MaVaiTro=?',[a.insertId,r.user.id,r.body.role],c);await audit(r.user,'TAO_TAI_KHOAN','TaiKhoan',a.insertId,r.body.role,c);return {id:a.insertId};});}));
+router.put('/admin/accounts/:id',admin,run(async r=>{const id=positive(r.params.id);if(id===r.user.id)fail('Không tự sửa vai trò hoặc khóa tài khoản đang dùng.');if(!['HOAT_DONG','BI_KHOA'].includes(r.body.status))fail('Trạng thái hoặc vai trò không hợp lệ.');await tx(async c=>{
  // Lock all active admin rows in a consistent order to protect the final administrator.
  const admins=await q("SELECT t.TaiKhoanID id FROM TaiKhoan t JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE v.MaVaiTro='SYSTEM_ADMIN' AND t.TrangThai='HOAT_DONG' ORDER BY t.TaiKhoanID FOR UPDATE",[],c);
- if(admins.some(x=>x.id===id)&&admins.length===1&&(r.body.status!=='HOAT_DONG'||r.body.role!=='SYSTEM_ADMIN'))fail('Không thể vô hiệu hóa quản trị viên cuối cùng.');
- await q('UPDATE TaiKhoan SET HoTen=?,TrangThai=?,NgayCapNhat=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[required(r.body.name,'họ tên'),r.body.status,id],c);await q('DELETE FROM TaiKhoanVaiTro WHERE TaiKhoanID=?',[id],c);await q('INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID,NguoiGanID) SELECT ?,VaiTroID,? FROM VaiTro WHERE MaVaiTro=?',[id,r.user.id,r.body.role],c);await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[id],c);await audit(r.user,'SUA_PHAN_QUYEN','TaiKhoan',id,r.body.role+' / '+r.body.status,c);});return {ok:true};}));
+ const [target]=await q('SELECT TaiKhoanID FROM TaiKhoan WHERE TaiKhoanID=? AND NgayXoa IS NULL FOR UPDATE',[id],c);
+ if(!target)fail('Tài khoản không tồn tại.',404);
+ const assigned=await q("SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=? FOR UPDATE",[id],c);
+ if(!assigned.length)fail('Không tìm thấy tài khoản có vai trò.',404);
+ const staffRoles=['SHOP_MANAGER','SYSTEM_ADMIN'];
+ const currentRole=assigned.length===1?assigned[0].role:null;
+ const requestedRole=r.body.role;
+ const changingRole=requestedRole!==undefined && requestedRole!==currentRole;
+ if(changingRole && !(staffRoles.includes(currentRole)&&staffRoles.includes(requestedRole)))fail('Chỉ được đổi vai trò giữa quản lý shop và nhân viên kỹ thuật.',403);
+ if(admins.some(x=>x.id===id)&&admins.length===1&&(r.body.status!=='HOAT_DONG'||(changingRole&&requestedRole!=='SYSTEM_ADMIN')))fail('Không thể vô hiệu hóa quản trị viên cuối cùng.');
+ await q('UPDATE TaiKhoan SET HoTen=?,TrangThai=?,NgayCapNhat=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[required(r.body.name,'họ tên'),r.body.status,id],c);
+ if(changingRole){
+   await q('UPDATE TaiKhoanVaiTro SET VaiTroID=(SELECT VaiTroID FROM VaiTro WHERE MaVaiTro=?),NguoiGanID=?,NgayGan=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[requestedRole,r.user.id,id],c);
+ }
+ await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[id],c);await audit(r.user,'SUA_PHAN_QUYEN','TaiKhoan',id,(requestedRole??assigned.map(x=>x.role).join(', '))+' / '+r.body.status,c);});return {ok:true};}));
+router.delete('/admin/accounts/:id',admin,run(async r=>{
+ const id=positive(r.params.id);
+ if(id===r.user.id)fail('Bạn không thể xóa tài khoản đang đăng nhập.',403);
+ return tx(async c=>{
+   const [target]=await q('SELECT TrangThai FROM TaiKhoan WHERE TaiKhoanID=? AND NgayXoa IS NULL FOR UPDATE',[id],c);
+   if(!target)fail('Tài khoản không tồn tại.',404);
+   const roles=await q('SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=? FOR UPDATE',[id],c);
+   if(!roles.length||roles.some(v=>!['CUSTOMER','SHOP_MANAGER'].includes(v.role)))fail('Chỉ được xóa tài khoản khách hàng hoặc quản lý shop.',403);
+   if(target.TrangThai!=='BI_KHOA')fail('Hãy khóa tài khoản trước khi xóa.',409);
+   // Preserve the ID and historical attribution while releasing the login identifiers.
+   const alias='deleted-'+randomUUID();
+   await q("UPDATE TaiKhoan SET NgayXoa=UTC_TIMESTAMP(),NgayCapNhat=UTC_TIMESTAMP(),TenDangNhap=?,Email=?,MatKhauHash=?,SoDienThoai=NULL,DiaChi=NULL,NgaySinh=NULL,GioiTinh=NULL,AnhDaiDien=NULL WHERE TaiKhoanID=?",[alias,alias,hashPassword(randomUUID()),id],c);
+   await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=? AND ThuHoiLuc IS NULL',[id],c);
+   await q('UPDATE DatLaiMatKhau SET DaSuDungLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=? AND DaSuDungLuc IS NULL',[id],c);
+   await audit(r.user,'XOA_TAI_KHOAN','TaiKhoan',id,roles.map(v=>v.role).join(', '),c);
+   return {ok:true};
+ });
+}));
 router.get('/admin/logs',admin,run(async()=>await q('SELECT n.NhatKyID id,t.HoTen name,n.HanhDong action,n.DoiTuong object,n.MaDoiTuong objectId,n.NoiDung content,n.KetQua result,n.ThoiDiem date FROM NhatKyHeThong n LEFT JOIN TaiKhoan t ON t.TaiKhoanID=n.NguoiThucHienID ORDER BY n.NhatKyID DESC LIMIT 200')));
-router.get('/admin/system',admin,run(async()=>({database:(await q('SELECT DATABASE() name,VERSION() version'))[0],tables:(await q('SELECT COUNT(*) n FROM information_schema.tables WHERE table_schema=DATABASE()'))[0].n,sessions:(await q('SELECT COUNT(*) n FROM PhienDangNhap WHERE ThuHoiLuc IS NULL AND HetHanLuc>UTC_TIMESTAMP()'))[0].n,accounts:(await q('SELECT COUNT(*) n FROM TaiKhoan'))[0].n})));
+router.get('/admin/system',admin,run(async()=>({database:(await q('SELECT DATABASE() name,VERSION() version'))[0],tables:(await q('SELECT COUNT(*) n FROM information_schema.tables WHERE table_schema=DATABASE()'))[0].n,sessions:(await q('SELECT COUNT(*) n FROM PhienDangNhap WHERE ThuHoiLuc IS NULL AND HetHanLuc>UTC_TIMESTAMP()'))[0].n,accounts:(await q('SELECT COUNT(*) n FROM TaiKhoan WHERE NgayXoa IS NULL'))[0].n})));
 
 router.get('/manage/customers/:id/orders',manager,run(async r=>await q(ordersSql+' WHERE d.KhachHangID=? ORDER BY d.DonHangID DESC',[positive(r.params.id)])));
