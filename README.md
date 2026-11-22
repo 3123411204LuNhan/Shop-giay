@@ -47,11 +47,11 @@ cd Shop-giay
 3. Mở terminal tại thư mục dự án và cài thư viện:
 
 ```powershell
-npm.cmd install
-Copy-Item .env.example .env
+npm.cmd ci
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-4. Mở `.env`, điền cấu hình MySQL:
+4. Điền cấu hình MySQL trong `.env`. Với máy chủ của đồ án, đặt `DB_HOST=Admin-pc`, cổng `3306` và người dùng `root`. Ví dụ dưới đây dùng MySQL trên cùng máy.
 
 ```dotenv
 PORT=5173
@@ -74,6 +74,8 @@ npm.cmd run dev
 ```
 
 `db:setup` từ chối ghi đè khi database đã có bảng. `db:seed` từ chối chạy nếu đã có tài khoản, để tránh nạp trùng hoặc xóa dữ liệu đã sử dụng. Sau lần khởi tạo thành công, bình thường chỉ chạy `npm.cmd run dev`.
+
+Khi cập nhật một bản đã có dữ liệu, giữ cấu hình trong `.env`, chạy `npm.cmd ci`, tiếp theo chạy `npm.cmd run db:migrate` rồi `npm.cmd run dev`. Các lần mở lại chỉ cần bật MySQL và chạy `npm.cmd run dev` trong thư mục chứa `package.json`.
 
 Nếu dùng database mới, đổi `DB_NAME` rồi chạy lại hai bước. MySQL DDL tự commit; nếu lần tạo schema bị gián đoạn, kiểm tra lỗi và dùng tên database mới thay vì xóa database đang có dữ liệu.
 

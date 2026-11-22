@@ -70,15 +70,19 @@ export async function verifyResetCode({challenge,code}) {
   return result;
 }
 
+export async function saveNewPassword(c,id,password) {
+    await query('UPDATE TaiKhoan SET MatKhauHash=?,NgayDoiMatKhau=UTC_TIMESTAMP(),SoLanDangNhapSai=0,KhoaDenLuc=NULL WHERE TaiKhoanID=?',[hashPassword(password),id],c);
+    await query('UPDATE DatLaiMatKhau SET DaSuDungLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=? AND DaSuDungLuc IS NULL',[id],c);
+    await query('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[id],c);
+}
+
 export async function resetPassword({token,password}) {
   if (typeof password!=='string'||password.length<8||password.length>128) fail('Mật khẩu cần từ 8 đến 128 ký tự.');
   if (!/^[a-f0-9]{64}$/.test(String(token||''))) fail('Phiên đặt lại mật khẩu không hợp lệ.');
   const result=await lockedRequest(token,async(c,row)=>{
     // A challenge is not a reset grant. Only verified grants or legacy links pass.
     if (row.MaXacMinhHash!==null) return {error:'Bạn cần xác minh OTP trước khi đặt mật khẩu mới.'};
-    await query('UPDATE TaiKhoan SET MatKhauHash=?,NgayDoiMatKhau=UTC_TIMESTAMP(),SoLanDangNhapSai=0,KhoaDenLuc=NULL WHERE TaiKhoanID=?',[hashPassword(password),row.TaiKhoanID],c);
-    await query('UPDATE DatLaiMatKhau SET DaSuDungLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=? AND DaSuDungLuc IS NULL',[row.TaiKhoanID],c);
-    await query('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[row.TaiKhoanID],c);
+    await saveNewPassword(c,row.TaiKhoanID,password);
     return {ok:true};
   });
   if(result.error)fail(result.error);

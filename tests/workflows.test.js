@@ -34,6 +34,36 @@ test('Luồng phát triển: phiếu kho, hết hạn, COD, giao thất bại, t
     const lookups=await manager.ok('/manage/lookups');
     const p=await manager.ok('/manage/products',{code:'QA-'+randomUUID(),name:'QA luồng kho',price:2000000,categoryId:lookups.categories[0].id,brandId:lookups.brands[0].id,status:'DANG_BAN'});productId=p.id;
     const v=await manager.ok('/manage/variants',{productId,sku:'QA-'+randomUUID(),sizeId:lookups.sizes[0].id,colorId:lookups.colors[0].id});variantId=v.id;
+    await t.test('Tạo màu, chọn size lẻ và chặn trùng tổ hợp',async()=>{
+      const name='QA-'+randomUUID();
+      const color=await manager.ok('/manage/colors',{name,hex:'#427651'});
+      const size=await manager.ok('/manage/sizes',{name:'42,5'});
+      let extra;
+      try{
+        assert.equal((await manager.ok('/manage/sizes',{name:'42.50'})).id,size.id);
+        assert.equal((await manager.ok('/manage/colors',{name})).id,color.id);
+        const fields={productId,sku:randomUUID(),sizeId:size.id,colorId:color.id};
+        extra=await manager.ok('/manage/variants',fields);
+        assert.equal((await manager.call('/manage/variants',{...fields,sku:randomUUID()})).status,409);
+      }finally{
+        if(extra){await manager.ok('/manage/variants/'+extra.id,{active:0},'PUT');await manager.ok('/manage/variants/'+extra.id,undefined,'DELETE');}
+        await query('DELETE FROM MauSac WHERE MauSacID=? AND TenMau=?',[color.id,name]);
+        if(!lookups.sizes.some(s=>s.id===size.id))await query('DELETE FROM KichCo WHERE KichCoID=?',[size.id]);
+      }
+    });
+    await t.test('Biến thể đang bán phải lưu ẩn trước khi sửa hoặc xóa',async()=>{
+      const sizeId=lookups.sizes[1].id,colorId=lookups.colors[0].id;
+      const extra=await manager.ok('/manage/variants',{productId,sku:'QA-'+randomUUID(),sizeId,colorId});
+      const path='/manage/variants/'+extra.id;
+      assert.equal((await manager.call(path,undefined,'DELETE')).status,409);
+      assert.equal((await manager.call(path,{active:0,sizeId,colorId,price:100000},'PUT')).status,409);
+      await manager.ok(path,{active:0},'PUT');
+      await manager.ok(path,{active:0,sizeId,colorId,price:100000},'PUT');
+      const row=(await manager.ok('/manage/variants')).find(x=>x.id===extra.id);
+      assert.ok(row.productCode);
+      assert.equal(row.price,100000);
+      await manager.ok(path,undefined,'DELETE');
+    });
     await t.test('Công bố, kết thúc, gia hạn và xóa mã nháp trên trang khách',async()=>{
       const code='QA-'+randomUUID(), day=86400000;
       const time=offset=>new Date(Date.now()+offset*day).toISOString();

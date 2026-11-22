@@ -3,3 +3,59 @@
 .otp-icon{display:grid;place-items:center;width:58px;height:58px;margin:12px auto 20px;border-radius:50%;background:#edf4d7;color:#6e853f}.otp-verification>p{font-size:12px;line-height:1.9;text-align:center;color:#849071;overflow-wrap:anywhere}.otp-verification .otp-input{font-size:28px;letter-spacing:12px;text-align:center;font-weight:600;padding:17px 10px;background:#fafbf6}.otp-links{display:flex;justify-content:space-between;gap:10px;margin:22px 0}.otp-links button{font-size:10px}.otp-help{border-top:1px solid #e9ece2;padding-top:16px;color:#909c7f;font-size:10px}.otp-help summary{cursor:pointer}.otp-help p{font-size:10px;line-height:1.9}
 
 .workflow-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 0;flex-wrap:wrap}.workflow-toolbar p{max-width:700px;color:#65716c;margin:0;line-height:1.6}.workflow-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.receipt-line{display:grid;grid-template-columns:minmax(200px,2fr) 100px 150px auto;gap:12px;align-items:end;padding:16px 0;border-bottom:1px solid #e3e7e1}.receipt-line .small-button{margin-bottom:6px}.workflow-summary{border-top:1px solid #dfe5df;border-bottom:1px solid #dfe5df;padding:12px 0;margin:16px 0}.workflow-summary p{display:flex;justify-content:space-between;gap:15px}.workflow-notice{padding:18px 0;border-top:1px solid #e3e7e1;border-bottom:1px solid #e3e7e1;margin:14px 0}.workflow-notice p{line-height:1.6;color:#65716c;margin:8px 0}.actions{flex-wrap:wrap}.actions .button:disabled{opacity:.5;cursor:wait}@media(max-width:700px){.receipt-line{grid-template-columns:1fr 1fr}.receipt-line>label:first-child{grid-column:1/-1}.workflow-fields{grid-template-columns:1fr}.order-info{grid-template-columns:1fr}}
+
+.stock-filters {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px 12px;
+  padding: 4px 22px 18px;
+}
+.stock-filters > label { display: grid; min-width: 0; gap: 6px; font-size: .8rem; }
+.stock-filters select, .stock-filters input[list] {
+  width: 100%; min-width: 0; height: 36px; padding: 0 9px;
+  border: 1px solid var(--border); border-radius: 6px; background: white;
+}
+.stock-filter-actions { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.stock-filter-actions label { display: inline-flex; align-items: center; gap: 7px; font-size: .85rem; }
+.stock-filter-actions input { margin: 0; }
+@media (max-width: 1200px) {
+  .stock-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-inline: 17px; }
+}
+@media (max-width: 700px) {
+  .stock-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-inline: 15px; }
+}
+.workflow-toolbar.receipt-toolbar {
+  padding: 0 22px 18px;
+  gap: 10px 16px;
+}
+.receipt-toolbar p { flex: 1 1 250px; }
+.receipt-form { container-type: inline-size; }
+.receipt-form .workflow-fields,
+.receipt-form .receipt-line { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.receipt-form .workflow-fields > label,
+.receipt-form .receipt-line > label { min-width: 0; }
+.receipt-form .receipt-line {
+  grid-template-columns: minmax(0, 1fr) 90px 130px max-content;
+  align-items: end;
+  gap: 12px;
+  padding: 0 0 14px;
+}
+.receipt-form .receipt-line > label:first-child { grid-column: auto; }
+.receipt-form .receipt-line input,
+.receipt-form .receipt-line .small-button { height: 38px; margin-bottom: 0; }
+.receipt-form .actions { justify-content: space-between; }
+.receipt-form .actions .button { margin-top: 0; }
+@container (max-width: 590px) {
+  .receipt-form .receipt-line { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .receipt-form .receipt-line > label:first-child { grid-column: 1 / -1; }
+  .receipt-form .receipt-line .small-button { grid-column: 1 / -1; justify-self: end; }
+}
+@container (max-width: 440px) {
+  .receipt-form .workflow-fields { grid-template-columns: 1fr; }
+}
+@media (max-width: 1200px) { .workflow-toolbar.receipt-toolbar { padding-inline: 17px; } }
+@media (max-width: 700px) { .workflow-toolbar.receipt-toolbar { padding-inline: 15px; } }
+.login-password { position: relative; margin-top: 8px; }
+.form .login-password input { margin-top: 0; padding-right: 46px; }
+.login-password input::-ms-reveal { display: none; }
+.login-password button { position: absolute; inset: 0 1px 0 auto; width: 42px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--ink); cursor: pointer; }

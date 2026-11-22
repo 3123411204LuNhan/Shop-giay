@@ -29,7 +29,14 @@ export async function migrateWorkflows() {
     }
   }
   await query("UPDATE TaiKhoan SET TrangThai='BI_KHOA' WHERE TrangThai='VO_HIEU_HOA'");
+  await query("UPDATE SanPham SET TrangThai='AN' WHERE TrangThai='NHAP'");
+  for (const table of ['DanhMuc','ThuongHieu']) {
+    await query(`UPDATE ${table} SET LaBanNhap=1,DangHoatDong=0 WHERE (DangHoatDong=0 AND LaBanNhap=0) OR (LaBanNhap=1 AND DangHoatDong=1)`);
+  }
+  const [productStatus]=await query("SELECT COLUMN_DEFAULT value FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='SanPham' AND column_name='TrangThai'");
+  if(productStatus.value!=='AN')await query("ALTER TABLE SanPham ALTER COLUMN TrangThai SET DEFAULT 'AN'");
   for(const [table,name,clause] of [
+    ['SanPham','CK_SanPham_TrangThai',"CHECK (TrangThai IN ('DANG_BAN','AN','NGUNG_BAN'))"],
     ['TaiKhoan','CK_TaiKhoan_TrangThai',"CHECK (TrangThai IN ('HOAT_DONG','BI_KHOA'))"],
     ['PhieuKho','CK_PhieuKho_TrangThai',"CHECK (TrangThai IN ('NHAP','DA_XAC_NHAN','DA_HUY'))"],
     ['DonHang','CK_DonHang_GiaoHang',"CHECK (TrangThaiGiaoHang IN ('CHUA_GIAO','DANG_GIAO','GIAO_THAT_BAI','CHO_HOAN_VE','DA_NHAN_HOAN','DA_GIAO'))"],

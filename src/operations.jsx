@@ -23,22 +23,29 @@ export function CheckoutReview({api,Form,fields,user,requestId,perform,busy,onCr
 export function ReceiptWorkspace({api,perform,busy,rows,reload,Modal,DataTable}) {
   const [receipt,setReceipt]=useState(null),[variants,setVariants]=useState([]),[editing,setEditing]=useState(false);
   useEffect(()=>{api('/manage/variants').then(setVariants).catch(()=>{});},[]);
-  const create=()=>{const variantId=Number(new URLSearchParams(location.search).get('variant'))||variants[0]?.id||'';setReceipt({type:'NHAP',supplier:'',reference:'',reason:'',requestId:crypto.randomUUID(),items:[{variantId,quantity:1,cost:''}]});setEditing(true);};
+  const create=()=>{const variantId=Number(new URLSearchParams(location.search).get('variant'))||'';setReceipt({type:'NHAP',supplier:'',reference:'',reason:'',requestId:crypto.randomUUID(),items:[{variantId,quantity:1,cost:''}]});setEditing(true);};
   const open=id=>perform(async()=>{setReceipt(await api('/manage/receipts/'+id));setEditing(false);},'');
   const mutate=(key,value)=>setReceipt({...receipt,[key]:value});
   const lineChange=(index,key,value)=>setReceipt({...receipt,items:receipt.items.map((x,i)=>i===index?{...x,[key]:value}:x)});
+  const variantLabel=v=>v?v.sku+' · '+v.name+' · EU '+v.size+' · '+v.color:'';
+  const selectVariant=(index,query)=>{
+    const typed=query.trim().toLowerCase();
+    const match=variants.find(v=>variantLabel(v).toLowerCase()===typed||v.sku.toLowerCase()===typed);
+    setReceipt(old=>({...old,items:old.items.map((line,i)=>i===index?{...line,variantId:match?.id??'',variantQuery:match?variantLabel(match):query}:line)}));
+  };
   const action=(path,body)=>perform(async()=>{await api('/manage/receipts/'+receipt.id+'/'+path,body);setReceipt(await api('/manage/receipts/'+receipt.id));await reload();},'Đã cập nhật phiếu kho.');
   return <>
-    <div className="workflow-toolbar"><p>Nháp chưa thay đổi tồn. Xác nhận phiếu sau khi đã kiểm hàng thực nhận.</p><button className="button dark" onClick={create}>Lập phiếu kho</button></div>
+    <div className="workflow-toolbar receipt-toolbar"><p>Nháp chưa thay đổi tồn. Xác nhận phiếu sau khi đã kiểm hàng thực nhận.</p><button className="button dark" onClick={create}>Lập phiếu kho</button></div>
     <DataTable rows={rows} columns={[["code","Mã phiếu"],['type','Nghiệp vụ',v=>typeNames[v]],['status','Trạng thái',v=><span className="badge">{receiptNames[v]}</span>],['supplier','Nhà cung cấp'],['reference','Chứng từ'],['date','Ngày lập',when],['creator','Người lập']]} actions={r=><button className="small-button" onClick={()=>open(r.id)}>Chi tiết phiếu</button>}/>
     {receipt&&<Modal title={receipt.id?'Phiếu '+receipt.code:'Lập phiếu kho'} wide close={()=>{setReceipt(null);setEditing(false);}}>
-      {editing?<form className="form" onSubmit={e=>{e.preventDefault();perform(async()=>{const result=await api('/manage/receipts'+(receipt.id?'/'+receipt.id:''),receipt,receipt.id?'PUT':'POST');setReceipt(await api('/manage/receipts/'+result.id));setEditing(false);await reload();},'Đã lưu nháp. Tồn kho chưa thay đổi.');}}>
+      {editing?<form className="form receipt-form" onSubmit={e=>{e.preventDefault();perform(async()=>{const result=await api('/manage/receipts'+(receipt.id?'/'+receipt.id:''),{...receipt,items:receipt.items.map(({variantId,quantity,cost})=>({variantId,quantity,cost}))},receipt.id?'PUT':'POST');setReceipt(await api('/manage/receipts/'+result.id));setEditing(false);await reload();},'Đã lưu nháp. Tồn kho chưa thay đổi.');}}>
         <label>Nghiệp vụ<select value={receipt.type} onChange={e=>mutate('type',e.target.value)}><option value="NHAP">Nhập hàng thực nhận</option><option value="DIEU_CHINH">Điều chỉnh chênh lệch (+/−)</option></select></label>
         <div className="workflow-fields"><label>Nhà cung cấp<input required={receipt.type==='NHAP'} maxLength={200} value={receipt.supplier||''} onChange={e=>mutate('supplier',e.target.value)}/></label><label>Mã chứng từ tham chiếu<input required={receipt.type==='NHAP'} maxLength={100} value={receipt.reference||''} onChange={e=>mutate('reference',e.target.value)}/></label></div>
         <label>Lý do / ghi chú kiểm hàng<textarea required value={receipt.reason} onChange={e=>mutate('reason',e.target.value)}/></label>
         <p className="fine">Nhập số lượng thực nhận đạt yêu cầu. Điều chỉnh nhập phần chênh lệch có dấu; hàng đã phân bổ không được giảm quá tồn khả dụng.</p>
+        <datalist id="receipt-variant-options">{variants.map(v=><option key={v.id} value={variantLabel(v)}/>)}</datalist>
         {receipt.items.map((item,i)=><div className="receipt-line" key={i}>
-          <label>Biến thể<select required value={item.variantId} onChange={e=>lineChange(i,'variantId',e.target.value)}><option value="">Chọn biến thể</option>{variants.map(v=><option key={v.id} value={v.id}>{v.sku} · {v.name} · {v.size} · {v.color}</option>)}</select></label>
+          <label>Biến thể<input required list="receipt-variant-options" autoComplete="off" placeholder="Gõ SKU, tên giày, size hoặc màu…" value={item.variantQuery??variantLabel(variants.find(v=>v.id===Number(item.variantId)))} onChange={e=>selectVariant(i,e.target.value)} ref={el=>el?.setCustomValidity(item.variantQuery&&!item.variantId?'Hãy chọn một biến thể trong danh sách gợi ý.':'')}/></label>
           <label>Số lượng<input type="number" required step="1" min={receipt.type==='NHAP'?1:-100000} max="100000" value={item.quantity} onChange={e=>lineChange(i,'quantity',e.target.value)}/></label>
           <label>Đơn giá nhập<input type="number" min="0" step="1" value={item.cost??''} onChange={e=>lineChange(i,'cost',e.target.value)}/></label>
           <button type="button" className="small-button" disabled={receipt.items.length===1} onClick={()=>mutate('items',receipt.items.filter((_,n)=>n!==i))}>Bỏ dòng</button>

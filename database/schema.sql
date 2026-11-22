@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS SanPham (
   GiaBan decimal(18,2) NOT NULL CHECK (GiaBan > 0),
   DanhMucID int NOT NULL,
   ThuongHieuID int NOT NULL,
-  TrangThai varchar(20) NOT NULL DEFAULT 'NHAP' CHECK (TrangThai IN ('NHAP','DANG_BAN','AN','NGUNG_BAN')),
+  TrangThai varchar(20) NOT NULL DEFAULT 'AN' CONSTRAINT CK_SanPham_TrangThai CHECK (TrangThai IN ('DANG_BAN','AN','NGUNG_BAN')),
   NguoiTaoID bigint NULL,
   NgayTao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   NgayCapNhat datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
