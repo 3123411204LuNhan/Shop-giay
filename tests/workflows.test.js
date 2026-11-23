@@ -178,7 +178,11 @@ test('Luồng phát triển: phiếu kho, hết hạn, COD, giao thất bại, t
     });
     await t.test('Trả hàng đã nhận được lưu dù COD chưa đối soát; chặn hoàn tất khi chưa hoàn đủ',async()=>{
       const a=await newOrder('COD');orderId=a.id;for(const status of ['DA_XAC_NHAN','DANG_CHUAN_BI','DANG_GIAO','DA_GIAO'])await manager.ok('/manage/orders/'+a.id+'/status',{status});
-      const o=await customer.ok('/orders/'+a.id);await customer.ok('/returns',{type:'TRA',itemId:o.items[0].id,quantity:1,reason:'QA trả sau giao'});const y=(await customer.ok('/returns'))[0];
+      const o=await customer.ok('/orders/'+a.id);
+      const image='https://example.test/return-evidence.jpg';
+      await customer.ok('/returns',{type:'TRA',itemId:o.items[0].id,quantity:1,reason:'QA trả sau giao',image});
+      const y=(await customer.ok('/returns'))[0];
+      assert.equal((await manager.ok('/manage/returns')).find(row=>row.id===y.id).image,image);
       await manager.ok('/manage/returns/'+y.id+'/action',{action:'approve',reason:'QA chấp nhận'});await manager.ok('/manage/returns/'+y.id+'/action',{action:'receive',sellable:true,reason:'QA đủ hàng'});
       assert.deepEqual(await stock(),{physical:11,reserved:0});assert.equal((await manager.call('/manage/returns/'+y.id+'/action',{action:'complete'})).status,400);
       const detail=await customer.ok('/returns/'+y.id);assert.equal(detail.items[0].received,1);assert.equal(detail.status,'DANG_XU_LY');

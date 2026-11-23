@@ -5,6 +5,7 @@ const when=value=>value?new Date(value).toLocaleString('vi-VN'):'—';
 const typeNames={NHAP:'Nhập hàng',DIEU_CHINH:'Điều chỉnh',NHAN_TRA:'Nhận hàng hoàn'};
 const receiptNames={NHAP:'Phiếu nháp',DA_XAC_NHAN:'Đã ghi sổ',DA_HUY:'Đã hủy'};
 
+// CheckoutReview gọi CheckoutController để báo giá và đặt đơn; CheckoutService xử lý cả hai trên cùng quy tắc tính tiền.
 export function CheckoutReview({api,Form,fields,user,requestId,perform,busy,onCreated,initialPromo=''}) {
   const [draft,setDraft]=useState({name:user?.name,phone:user?.phone,address:user?.address,method:'COD',promo:initialPromo});
   const [quote,setQuote]=useState(null);

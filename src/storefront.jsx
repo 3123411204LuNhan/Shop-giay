@@ -47,6 +47,7 @@ export function Discover({api,browse,openProduct,favorite,wishlist}){
  </>;
 }
 
+// RunningClub tải ưu đãi qua PromotionController; PromotionService chọn chương trình công khai.
 export function RunningClub({api,browse,usePromo,notify}){
  const [promos,setPromos]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[copied,setCopied]=useState('');
  const load=()=>{setLoading(true);setError('');api('/promotions').then(setPromos).catch(e=>setError(e.message)).finally(()=>setLoading(false));};

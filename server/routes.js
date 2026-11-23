@@ -1,369 +1,86 @@
-import {createPromotion,updatePromotion,deleteDraft} from './promotions.js';
+import { AuthController } from './auth/AuthController.js';
+import { CatalogController } from './catalog/CatalogController.js';
+import { PromotionController } from './promotion/PromotionController.js';
+import { CheckoutController } from './checkout/CheckoutController.js';
+import { OrderController } from './order/OrderController.js';
+import { ReturnController } from './return/ReturnController.js';
+import { InventoryController } from './inventory/InventoryController.js';
+import { ReportController } from './report/ReportController.js';
 import { Router } from 'express';
-import { randomUUID, randomBytes, createHash } from 'node:crypto';
-import { query as q, tx, fail, positive, text } from './db.js';
-import { identify, requireUser, role, hashPassword, verifyPassword, createSession, tokenHash, audit } from './auth.js';
-import { SESSION_AREAS, loginArea, clearSessionCookie, validSessionToken, canUseArea } from './session-cookie.js';
-import { requestPasswordReset, verifyResetCode, resetPassword, saveNewPassword } from './password-reset.js';
-import {storeConfig,publicStoreConfig} from './store-config.js';
-import {stockLog,reserveRefunds,prepareReturnRefunds,installOperations} from './operations.js';
+import { identify, requireUser, role } from './auth.js';
+import { canUseArea } from './session-cookie.js';
+import { UserController } from './users/UserController.js';
+export { expireUnpaidOrders } from './order/OrderService.js';
 export const router = Router();
-const manager=role(['SHOP_MANAGER']),admin=role(['SYSTEM_ADMIN']);
-const run=fn=>async(req,res,next)=>{try{res.json(await fn(req,res));}catch(e){next(e);}};
-const required=(v,label)=>{const s=text(v);if(!s)fail(`Vui lòng nhập ${label}.`);return s;};
-const price=v=>{const n=Number(v);if(!Number.isFinite(n)||n<=0||n>1e10)fail('Giá tiền không hợp lệ.');return Math.round(n);};
-const code=prefix=>prefix+'-'+Date.now().toString(36).toUpperCase()+'-'+randomBytes(2).toString('hex').toUpperCase();
+const manager = role(['SHOP_MANAGER']),
+  admin = role(['SYSTEM_ADMIN']);
+const run = (fn) => async (req, res, next) => {
+  try {
+    res.json(await fn(req, res));
+  } catch (e) {
+    next(e);
+  }
+};
+const guards = { run, role, admin, manager };
+const authController = new AuthController();
+const catalogController = new CatalogController();
+const promotionController = new PromotionController();
+const checkoutController = new CheckoutController();
+const orderController = new OrderController();
+const returnController = new ReturnController();
+const inventoryController = new InventoryController();
+const reportController = new ReportController();
+
 router.use(identify);
 // A tab rendered for A must not mutate B's cart after a shared browser cookie changes.
-router.use((r,s,next)=>{
-  const expected=r.get('x-sole-account');
-  const publicAuth=r.path==='/me'||['/auth/login','/auth/register','/auth/forgot','/auth/verify-otp','/auth/reset'].includes(r.path);
-  if(expected&&r.user&&String(r.user.id)!==expected&&!publicAuth){
-    return next(Object.assign(new Error('Tài khoản trong trình duyệt đã thay đổi. Vui lòng kiểm tra lại giỏ hàng trước khi thao tác.'),{status:409,code:'SESSION_CHANGED'}));
+router.use((r, s, next) => {
+  const expected = r.get('x-sole-account');
+  const publicAuth =
+    r.path === '/me' ||
+    ['/auth/login', '/auth/register', '/auth/forgot', '/auth/verify-otp', '/auth/reset'].includes(
+      r.path,
+    );
+  if (expected && r.user && String(r.user.id) !== expected && !publicAuth) {
+    return next(
+      Object.assign(
+        new Error(
+          'Tài khoản trong trình duyệt đã thay đổi. Vui lòng kiểm tra lại giỏ hàng trước khi thao tác.',
+        ),
+        { status: 409, code: 'SESSION_CHANGED' },
+      ),
+    );
   }
   next();
 });
-router.get('/store-settings',run(async()=>publicStoreConfig()));
-router.get('/me',run(async r=>({user:r.user||null})));
-router.post('/auth/login',run(async(r,s)=>{
-  const users=await q("SELECT TaiKhoanID id,MatKhauHash hash,TrangThai status,KhoaDenLuc locked FROM TaiKhoan WHERE NgayXoa IS NULL AND (Email=? OR TenDangNhap=?)",[text(r.body.login),text(r.body.login)]);
-  const u=users[0];if(!u||String(r.body.password||'').length>128||!verifyPassword(String(r.body.password||''),u.hash)){if(u)await q('UPDATE TaiKhoan SET SoLanDangNhapSai=SoLanDangNhapSai+1,KhoaDenLuc=IF(SoLanDangNhapSai>=5,DATE_ADD(UTC_TIMESTAMP(),INTERVAL 15 MINUTE),KhoaDenLuc) WHERE TaiKhoanID=?',[u.id]);fail('Email hoặc mật khẩu không đúng.',401);}
-  if(u.status!=='HOAT_DONG'||(u.locked&&new Date(u.locked)>new Date()))fail('Tài khoản đang bị khóa.',403);
-  const roles=(await q('SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=?',[u.id])).map(x=>x.role);
-  const area=loginArea(roles,r.sessionArea);if(!area)fail('Tài khoản không có quyền đăng nhập khu vực này.',403);
-  await createSession(u,r,s,area);await q('UPDATE TaiKhoan SET LanDangNhapCuoi=UTC_TIMESTAMP(),SoLanDangNhapSai=0 WHERE TaiKhoanID=?',[u.id]);return {ok:true,area};
-}));
-//phần đăng ký tài khoản mới
-router.post('/auth/register',run(async(r,s)=>{
-  if(r.sessionArea!=='customer')fail('Vui lòng đăng ký tài khoản khách hàng tại khu vực mua sắm.',403);
-  const name=required(r.body.name,'họ tên'),email=required(r.body.email,'email').toLowerCase(),password=String(r.body.password||'');
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||password.length<8||password.length>128)fail('Email chưa hợp lệ hoặc mật khẩu chưa đủ 8 ký tự.');
-  const id=await tx(async c=>{const a=await q('INSERT INTO TaiKhoan(TenDangNhap,Email,MatKhauHash,HoTen,SoDienThoai) VALUES(?,?,?,?,?)',[email,email,hashPassword(password),name,text(r.body.phone,20)||null],c);await q("INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID) SELECT ?,VaiTroID FROM VaiTro WHERE MaVaiTro='CUSTOMER'",[a.insertId],c);return a.insertId;});
-  await createSession({id},r,s,'customer');return {ok:true,area:'customer'};
-}));
-router.post('/auth/logout',run(async(r,s)=>{const token=r.cookies[SESSION_AREAS[r.sessionArea].cookie];if(validSessionToken(token))await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TokenHash=?',[tokenHash(token)]);clearSessionCookie(r,s);return {ok:true};}));
-router.post('/auth/forgot',run(async r=>requestPasswordReset(r.body.email)));
-router.post('/auth/verify-otp',run(async r=>verifyResetCode(r.body)));
-router.post('/auth/reset',run(async r=>resetPassword(r.body)));
-
-const productSelect=`SELECT s.SanPhamID id,s.MaSanPham code,s.TenSanPham name,s.MoTa description,s.GiaBan price,s.DanhMucID categoryId,s.ThuongHieuID brandId,s.TrangThai status,
- d.TenDanhMuc category,t.TenThuongHieu brand,(SELECT DuongDan FROM HinhAnhSanPham h WHERE h.SanPhamID=s.SanPhamID ORDER BY LaAnhChinh DESC,ThuTu,HinhAnhID LIMIT 1) image,
- COALESCE((SELECT SUM(k.SoLuongKhaDung) FROM BienTheSanPham b JOIN TonKho k ON k.BienTheID=b.BienTheID WHERE b.SanPhamID=s.SanPhamID AND b.DangKinhDoanh=1),0) stock
- FROM SanPham s JOIN DanhMuc d ON d.DanhMucID=s.DanhMucID JOIN ThuongHieu t ON t.ThuongHieuID=s.ThuongHieuID`;
-router.get('/catalog',run(async r=>{
-  const params=[],filters=["s.TrangThai='DANG_BAN'","d.DangHoatDong=1","t.DangHoatDong=1"];
-  if(r.query.q){filters.push('(s.TenSanPham LIKE ? OR s.MaSanPham LIKE ? OR t.TenThuongHieu LIKE ?)');params.push(...Array(3).fill('%'+text(r.query.q,100)+'%'));}
-  for(const [field,col]of [['category','s.DanhMucID'],['brand','s.ThuongHieuID']])if(r.query[field]){filters.push(col+'=?');params.push(positive(r.query[field]));}
-  if(r.query.max){filters.push('s.GiaBan<=?');params.push(price(r.query.max));}
-  if(r.query.size){filters.push('EXISTS(SELECT 1 FROM BienTheSanPham z JOIN KichCo kc ON kc.KichCoID=z.KichCoID JOIN TonKho tk ON tk.BienTheID=z.BienTheID WHERE z.SanPhamID=s.SanPhamID AND kc.GiaTri=? AND z.DangKinhDoanh=1 AND tk.SoLuongKhaDung>0)');params.push(text(r.query.size,20));}
-  if(r.query.color){filters.push('EXISTS(SELECT 1 FROM BienTheSanPham z WHERE z.SanPhamID=s.SanPhamID AND z.MauSacID=? AND z.DangKinhDoanh=1)');params.push(positive(r.query.color));}
-  const order={price_asc:'s.GiaBan ASC',price_desc:'s.GiaBan DESC',newest:'s.SanPhamID DESC'}[r.query.sort]||'s.SanPhamID ASC';
-  return {products:await q(productSelect+' WHERE '+filters.join(' AND ')+' ORDER BY '+order,params),categories:await q('SELECT DanhMucID id,TenDanhMuc name FROM DanhMuc WHERE DangHoatDong=1'),brands:await q('SELECT ThuongHieuID id,TenThuongHieu name FROM ThuongHieu WHERE DangHoatDong=1'),sizes:await q('SELECT KichCoID id,GiaTri name FROM KichCo ORDER BY ThuTu,CAST(GiaTri AS DECIMAL(8,2))'),colors:await q('SELECT MauSacID id,TenMau name FROM MauSac WHERE DangHoatDong=1')};
-}));
-router.get('/products/:id',run(async r=>{
-  const p=(await q(productSelect+" WHERE s.SanPhamID=? AND s.TrangThai='DANG_BAN' AND d.DangHoatDong=1 AND t.DangHoatDong=1",[positive(r.params.id)]))[0];if(!p)fail('Không tìm thấy sản phẩm.',404);
-  p.variants=await q('SELECT b.BienTheID id,b.SKU sku,kc.GiaTri size,m.TenMau color,m.MaHex hex,COALESCE(b.GiaBanRieng,?) price,COALESCE(k.SoLuongKhaDung,0) stock FROM BienTheSanPham b JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID LEFT JOIN TonKho k ON k.BienTheID=b.BienTheID WHERE b.SanPhamID=? AND b.DangKinhDoanh=1 ORDER BY kc.ThuTu',[p.price,p.id]);
-  p.reviews=await q("SELECT g.SoSao stars,g.NoiDung content,t.HoTen name,g.NgayTao date FROM DanhGia g JOIN TaiKhoan t ON t.TaiKhoanID=g.KhachHangID JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=g.ChiTietDonHangID JOIN BienTheSanPham b ON b.BienTheID=ct.BienTheID WHERE b.SanPhamID=? AND g.TrangThai='HIEN_THI' ORDER BY g.NgayTao DESC",[p.id]);return p;
-}));
-const publicPromotionCondition = "k.TrangThai='DANG_AP_DUNG' AND k.BatDauLuc<=UTC_TIMESTAMP() AND k.KetThucLuc>UTC_TIMESTAMP() AND (k.GioiHanLuotDung IS NULL OR (SELECT COUNT(*) FROM KhuyenMaiDonHang kd JOIN DonHang d ON d.DonHangID=kd.DonHangID WHERE kd.KhuyenMaiID=k.KhuyenMaiID AND d.TrangThai<>'DA_HUY')<k.GioiHanLuotDung)";
-router.get('/promotions',run(async()=>await q("SELECT k.MaKhuyenMai code,k.TenKhuyenMai name,k.HinhThuc type,k.GiaTri value,k.GiaTriDonToiThieu minimum,IF(k.HinhThuc='PHAN_TRAM',k.GiamToiDa,NULL) maximum,k.PhamVi scope,k.BatDauLuc start,k.KetThucLuc end,k.GioiHanMoiKhach perCustomer FROM KhuyenMai k WHERE "+publicPromotionCondition+" ORDER BY k.KetThucLuc,k.KhuyenMaiID")));
-
+// Các API công khai chạy trước bước bắt buộc đăng nhập.
+authController.registerPublic(router, guards);
+catalogController.registerPublic(router, guards);
+promotionController.registerPublic(router, guards);
+reportController.registerPublic(router, guards);
 router.use(requireUser);
-router.post('/staff/password',role(['SHOP_MANAGER','SYSTEM_ADMIN']),run(async(r,s)=>{
-  const {password}=r.body;
-  if(typeof password!=='string'||password.length<8||password.length>128)fail('Mật khẩu cần từ 8 đến 128 ký tự.');
-  const id=r.user.id;
-  await tx(async c=>{
-    const [account]=await q("SELECT TaiKhoanID FROM TaiKhoan WHERE TaiKhoanID=? AND TrangThai='HOAT_DONG' AND NgayXoa IS NULL FOR UPDATE",[id],c);
-    const token=r.cookies[SESSION_AREAS[r.sessionArea].cookie];
-    const [session]=await q('SELECT PhienID FROM PhienDangNhap WHERE TaiKhoanID=? AND TokenHash=? AND ThuHoiLuc IS NULL AND HetHanLuc>UTC_TIMESTAMP() FOR UPDATE',[id,tokenHash(token)],c);
-    if(!account||!session)fail('Vui lòng đăng nhập để tiếp tục.',401);
-    await saveNewPassword(c,id,password);
-    await audit(r.user,'DOI_MAT_KHAU','TaiKhoan',id,'Nhân sự tự đổi mật khẩu',c);
-  });
-  clearSessionCookie(r,s);
-  return {ok:true};
-}));
-router.use((r,s,next)=>{
-  if(r.path.startsWith('/manage/')||r.path.startsWith('/admin/'))return next();
-  if(r.method==='GET'&&/^\/orders\/\d+$/.test(r.path)&&r.sessionArea==='manager'&&r.user.roles.includes('SHOP_MANAGER'))return next();
-  if(r.sessionArea!=='customer'||!canUseArea(r.user.roles,'customer'))return next(Object.assign(new Error('Chức năng mua sắm chỉ dành cho tài khoản khách hàng.'),{status:403}));
+authController.registerStaff(router, guards);
+router.use((r, s, next) => {
+  if (r.path.startsWith('/manage/') || r.path.startsWith('/admin/')) return next();
+  if (
+    r.method === 'GET' &&
+    /^\/orders\/\d+$/.test(r.path) &&
+    r.sessionArea === 'manager' &&
+    r.user.roles.includes('SHOP_MANAGER')
+  )
+    return next();
+  if (r.sessionArea !== 'customer' || !canUseArea(r.user.roles, 'customer'))
+    return next(
+      Object.assign(new Error('Chức năng mua sắm chỉ dành cho tài khoản khách hàng.'), { status: 403 }),
+    );
   next();
 });
-router.put('/profile',run(async r=>{await q('UPDATE TaiKhoan SET HoTen=?,SoDienThoai=?,DiaChi=?,NgayCapNhat=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[required(r.body.name,'họ tên'),text(r.body.phone,20)||null,text(r.body.address,500)||null,r.user.id]);return {ok:true};}));
-async function cartId(id,c){await q('INSERT INTO GioHang(TaiKhoanID) VALUES(?) ON DUPLICATE KEY UPDATE TaiKhoanID=VALUES(TaiKhoanID)',[id],c);return (await q('SELECT GioHangID id FROM GioHang WHERE TaiKhoanID=?',[id],c))[0].id;}
-router.get('/cart',run(async r=>{const id=await cartId(r.user.id);return await q(`SELECT ct.BienTheID variantId,ct.SoLuong quantity,s.TenSanPham name,COALESCE(b.GiaBanRieng,s.GiaBan) price,kc.GiaTri size,m.TenMau color,k.SoLuongKhaDung stock,
- (SELECT DuongDan FROM HinhAnhSanPham h WHERE h.SanPhamID=s.SanPhamID ORDER BY LaAnhChinh DESC,ThuTu,HinhAnhID LIMIT 1) image FROM ChiTietGioHang ct JOIN BienTheSanPham b ON b.BienTheID=ct.BienTheID JOIN SanPham s ON s.SanPhamID=b.SanPhamID JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID JOIN TonKho k ON k.BienTheID=b.BienTheID WHERE ct.GioHangID=?`,[id]);}));
-router.put('/cart',run(async r=>{const variant=positive(r.body.variantId),qty=Number(r.body.quantity);if(!Number.isInteger(qty)||qty<0||qty>100)fail('Số lượng từ 0 đến 100.');await tx(async c=>{const id=await cartId(r.user.id,c);if(!qty){await q('DELETE FROM ChiTietGioHang WHERE GioHangID=? AND BienTheID=?',[id,variant],c);return;}const rows=await q("SELECT k.SoLuongKhaDung stock FROM TonKho k JOIN BienTheSanPham b ON b.BienTheID=k.BienTheID JOIN SanPham s ON s.SanPhamID=b.SanPhamID WHERE b.BienTheID=? AND b.DangKinhDoanh=1 AND s.TrangThai='DANG_BAN'",[variant],c);if(!rows[0]||rows[0].stock<qty)fail('Biến thể không đủ tồn kho.');await q('INSERT INTO ChiTietGioHang(GioHangID,BienTheID,SoLuong) VALUES(?,?,?) ON DUPLICATE KEY UPDATE SoLuong=VALUES(SoLuong),NgayCapNhat=UTC_TIMESTAMP()',[id,variant,qty],c);});return {ok:true};}));
-
-async function checkoutSnapshot(r,c){
-    const cart=await cartId(r.user.id,c);
-    const items=await q(`SELECT ct.*,b.SKU,b.SanPhamID,b.DangKinhDoanh,COALESCE(b.GiaBanRieng,s.GiaBan) price,s.MaSanPham,s.TenSanPham,s.TrangThai,s.DanhMucID,s.ThuongHieuID,d.TenDanhMuc,t.TenThuongHieu,kc.GiaTri size,m.TenMau color FROM ChiTietGioHang ct JOIN BienTheSanPham b ON b.BienTheID=ct.BienTheID JOIN SanPham s ON s.SanPhamID=b.SanPhamID JOIN DanhMuc d ON d.DanhMucID=s.DanhMucID JOIN ThuongHieu t ON t.ThuongHieuID=s.ThuongHieuID JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID WHERE ct.GioHangID=? AND d.DangHoatDong=1 AND t.DangHoatDong=1 ORDER BY b.BienTheID`,[cart],c);
-    if(!items.length)fail('Giỏ hàng đang trống.');const [{n:cartCount}]=await q('SELECT COUNT(*) n FROM ChiTietGioHang WHERE GioHangID=?',[cart],c);if(cartCount!==items.length)fail('Giỏ có sản phẩm đã ngừng kinh doanh.');
-    let total=0;for(const item of items){if(!item.DangKinhDoanh||item.TrangThai!=='DANG_BAN')fail('Có sản phẩm ngừng bán.');const [k]=await q('SELECT SoLuongKhaDung stock FROM TonKho WHERE BienTheID=? FOR UPDATE',[item.BienTheID],c);if(!k||k.stock<item.SoLuong)fail(item.TenSanPham+' không đủ hàng.');total+=item.price*item.SoLuong;}
-    let promo=null,discount=0;let eligible=items;
-    if(r.body.promo){[promo]=await q("SELECT * FROM KhuyenMai WHERE MaKhuyenMai=? AND TrangThai='DANG_AP_DUNG' AND BatDauLuc<=UTC_TIMESTAMP() AND KetThucLuc>UTC_TIMESTAMP() FOR UPDATE",[text(r.body.promo,50)],c);if(!promo||total<promo.GiaTriDonToiThieu)fail('Mã ưu đãi không hợp lệ hoặc đơn chưa đạt điều kiện.');
-      const [used]=await q("SELECT COUNT(*) n,SUM(d.KhachHangID=?) own FROM KhuyenMaiDonHang k JOIN DonHang d ON d.DonHangID=k.DonHangID WHERE k.KhuyenMaiID=? AND d.TrangThai<>'DA_HUY'",[r.user.id,promo.KhuyenMaiID],c);if((promo.GioiHanLuotDung&&used.n>=promo.GioiHanLuotDung)||(promo.GioiHanMoiKhach&&used.own>=promo.GioiHanMoiKhach))fail('Mã ưu đãi đã hết lượt sử dụng.');
-      if(promo.PhamVi!=='TOAN_BO'){const map={SAN_PHAM:['KhuyenMaiSanPham','SanPhamID'],DANH_MUC:['KhuyenMaiDanhMuc','DanhMucID'],THUONG_HIEU:['KhuyenMaiThuongHieu','ThuongHieuID']}[promo.PhamVi];const ids=await q(`SELECT ${map[1]} id FROM ${map[0]} WHERE KhuyenMaiID=?`,[promo.KhuyenMaiID],c);eligible=items.filter(x=>ids.some(y=>y.id===x[map[1]]));}
-      const base=eligible.reduce((s,x)=>s+x.price*x.SoLuong,0);const reduction=promo.HinhThuc==='PHAN_TRAM'?Math.min(Math.round(base*promo.GiaTri/100),promo.GiamToiDa??Infinity):promo.GiaTri;discount=Math.min(base,reduction);if(!discount)fail('Mã ưu đãi không áp dụng cho sản phẩm trong giỏ.');}
-    if(!['COD','BANK_TRANSFER'].includes(r.body.method||'COD'))fail('Hiện chỉ hỗ trợ COD và chuyển khoản đối soát thủ công.');
-    const method=(await q('SELECT PhuongThucID id FROM PhuongThucThanhToan WHERE MaPhuongThuc=? AND DangHoatDong=1',[r.body.method||'COD'],c))[0];if(!method)fail('Phương thức thanh toán không hợp lệ.');
-    const shipping=total>=1500000?0:30000;
-
-    const fingerprint=createHash('sha256').update(JSON.stringify({items:items.map(x=>[x.BienTheID,x.SoLuong,x.price]),promo:promo?.KhuyenMaiID,discount,shipping,method:method.id})).digest('hex');
-    return {cart,items,total,promo,discount,eligible,method,shipping,fingerprint};
-}
-router.post('/checkout/quote',run(async r=>await tx(async c=>{
-  const snapshot=await checkoutSnapshot(r,c);
-  return {items:snapshot.items.map(x=>({variantId:x.BienTheID,name:x.TenSanPham,size:x.size,color:x.color,quantity:x.SoLuong,price:x.price})),subtotal:snapshot.total,discount:snapshot.discount,shipping:snapshot.shipping,total:snapshot.total-snapshot.discount+snapshot.shipping,fingerprint:snapshot.fingerprint};
-})));
-router.post('/orders',run(async r=>{
-  const key=required(r.body.requestId,'mã yêu cầu');if(!/^[\da-f-]{36}$/i.test(key))fail('Mã yêu cầu không hợp lệ.');
-  return await tx(async c=>{
-    // Serialize checkout retries and promotion usage for one consistent cart/order snapshot.
-    await q('SELECT TaiKhoanID FROM TaiKhoan WHERE TaiKhoanID=? FOR UPDATE',[r.user.id],c);
-    const existing=await q('SELECT DonHangID id,KhachHangID owner FROM DonHang WHERE MaYeuCauTao=?',[key],c);if(existing[0]){if(existing[0].owner!==r.user.id)fail('Mã yêu cầu đã được sử dụng.',409);const [old]=await q('SELECT TongThanhToan total FROM DonHang WHERE DonHangID=?',[existing[0].id],c);return {id:existing[0].id,total:old.total};}
-    const {cart,items,total,promo,discount,eligible,method,shipping,fingerprint}=await checkoutSnapshot(r,c);
-    if(r.body.fingerprint&&r.body.fingerprint!==fingerprint)fail('Giỏ hàng, giá hoặc ưu đãi đã thay đổi. Vui lòng xem lại tổng tiền trước khi đặt.',409);
-    const result=await q('INSERT INTO DonHang(MaDonHang,MaYeuCauTao,KhachHangID,HoTenNguoiNhan,SoDienThoaiNhan,DiaChiNhan,GhiChu,PhuongThucID,TienHang,TienGiam,PhiVanChuyen) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[code('SS'),key,r.user.id,required(r.body.name,'người nhận'),required(r.body.phone,'số điện thoại'),required(r.body.address,'địa chỉ'),text(r.body.note),method.id,total,discount,shipping],c);const id=result.insertId;
-    if((r.body.method||'COD')==='BANK_TRANSFER')await q('UPDATE DonHang SET HanThanhToan=DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? MINUTE) WHERE DonHangID=?',[storeConfig.holdMinutes,id],c);
-    let remaining=discount;let remainingBase=eligible.reduce((s,x)=>s+x.price*x.SoLuong,0);
-    for(const item of items){let reduction=0;if(eligible.includes(item)&&remainingBase){reduction=Math.min(remaining,Math.round(remaining*item.price*item.SoLuong/remainingBase));remaining-=reduction;remainingBase-=item.price*item.SoLuong;}
-      const line=await q('INSERT INTO ChiTietDonHang(DonHangID,BienTheID,MaSanPhamLucMua,SKULucMua,TenSanPhamLucMua,KichCoLucMua,MauSacLucMua,DanhMucLucMua,ThuongHieuLucMua,SoLuong,DonGia,TienGiamPhanBo) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[id,item.BienTheID,item.MaSanPham,item.SKU,item.TenSanPham,item.size,item.color,item.TenDanhMuc,item.TenThuongHieu,item.SoLuong,item.price,reduction],c);
-      await q('INSERT INTO PhanBoTonKho(ChiTietDonHangID,SoLuongGiu) VALUES(?,?)',[line.insertId,item.SoLuong],c);await stockLog(c,r.user,item.BienTheID,'GIU_HANG',0,item.SoLuong,line.insertId,null,'Phân bổ khi đặt hàng');}
-    if(promo)await q('INSERT INTO KhuyenMaiDonHang(DonHangID,KhuyenMaiID,MaLucApDung,TenLucApDung,HinhThucLucApDung,GiaTriLucApDung,TienGiamThucTe) VALUES(?,?,?,?,?,?,?)',[id,promo.KhuyenMaiID,promo.MaKhuyenMai,promo.TenKhuyenMai,promo.HinhThuc,promo.GiaTri,discount],c);
-    await q("INSERT INTO LichSuDonHang(DonHangID,TrangThaiMoi,NguoiThucHienID,GhiChu) VALUES(?,'CHO_XAC_NHAN',?,'Khách tạo đơn')",[id,r.user.id],c);
-    await q("INSERT INTO ThanhToan(DonHangID,PhuongThucID,MaYeuCau,SoTien) VALUES(?,?,?,?)",[id,method.id,randomUUID(),total-discount+shipping],c);
-    await q('DELETE FROM ChiTietGioHang WHERE GioHangID=?',[cart],c);return {id,total:total-discount+shipping};
-  });
-}));
-const ordersSql=`SELECT d.DonHangID id,d.MaDonHang code,d.KhachHangID customerId,d.HoTenNguoiNhan name,d.SoDienThoaiNhan phone,d.DiaChiNhan address,d.GhiChu note,d.TrangThai status,d.TongThanhToan total,d.TienHang subtotal,d.TienGiam discount,d.PhiVanChuyen shipping,d.NgayDat date,d.HanThanhToan paymentDeadline,d.DonViVanChuyen carrier,d.MaVanDon tracking,d.TrangThaiGiaoHang deliveryStatus,p.MaPhuongThuc method,
- COALESCE((SELECT SUM(SoTien) FROM HoanTien h WHERE h.DonHangID=d.DonHangID AND h.TrangThai='DA_XAC_NHAN'),0) refunded,COALESCE((SELECT SUM(SoTien) FROM ThanhToan t WHERE t.DonHangID=d.DonHangID AND t.TrangThai='DA_XAC_NHAN'),0) paid FROM DonHang d JOIN PhuongThucThanhToan p ON p.PhuongThucID=d.PhuongThucID`;
-async function orderDetails(id){const order=(await q(ordersSql+' WHERE d.DonHangID=?',[id]))[0];if(!order)fail('Không tìm thấy đơn.',404);order.items=await q('SELECT ChiTietDonHangID id,BienTheID variantId,TenSanPhamLucMua name,KichCoLucMua size,MauSacLucMua color,SoLuong quantity,DonGia price,ThanhTien total FROM ChiTietDonHang WHERE DonHangID=?',[id]);order.history=await q('SELECT TrangThaiMoi status,ThoiDiem date,GhiChu note FROM LichSuDonHang WHERE DonHangID=? ORDER BY LichSuID',[id]);order.refunds=await q('SELECT HoanTienID id,SoTien amount,TrangThai status,LyDo reason,NgayXacNhan confirmedAt FROM HoanTien WHERE DonHangID=?',[id]);order.settings=publicStoreConfig();order.payments=await q('SELECT ThanhToanID id,SoTien amount,TrangThai status,BangChung proof,NgayXacNhan confirmedAt FROM ThanhToan WHERE DonHangID=?',[id]);return order;}
-router.get('/orders',run(async r=>await q(ordersSql+' WHERE d.KhachHangID=? ORDER BY d.DonHangID DESC',[r.user.id])));
-router.get('/orders/:id',run(async r=>{const o=await orderDetails(positive(r.params.id));if(o.customerId!==r.user.id&&!r.user.roles.includes('SHOP_MANAGER'))fail('Không có quyền xem đơn.',403);return o;}));
-async function cancelOrder(c,user,id,reason,owner){const [o]=await q('SELECT * FROM DonHang WHERE DonHangID=? FOR UPDATE',[id],c);if(!o||(owner&&o.KhachHangID!==user.id))fail('Không tìm thấy đơn.',404);if(o.TrangThai==='DA_HUY')return;if(!['CHO_XAC_NHAN','DA_XAC_NHAN','DANG_CHUAN_BI'].includes(o.TrangThai))fail('Đơn đang giao hoặc đã hoàn tất, không thể hủy.');const lines=await q("SELECT p.*,ct.BienTheID FROM PhanBoTonKho p JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=p.ChiTietDonHangID WHERE ct.DonHangID=? AND p.TrangThai='DANG_GIU' ORDER BY ct.BienTheID FOR UPDATE",[id],c);for(const l of lines){await stockLog(c,user,l.BienTheID,'GIAI_PHONG',0,-l.SoLuongGiu,l.ChiTietDonHangID,null,reason);await q("UPDATE PhanBoTonKho SET TrangThai='DA_GIAI_PHONG',NgayKetThuc=UTC_TIMESTAMP() WHERE ChiTietDonHangID=?",[l.ChiTietDonHangID],c);}await q("UPDATE DonHang SET TrangThai='DA_HUY',NgayHuy=UTC_TIMESTAMP(),NguoiHuyID=?,LyDoHuy=?,PhienBan=PhienBan+1 WHERE DonHangID=?",[user.id,reason,id],c);await q("INSERT INTO LichSuDonHang(DonHangID,TrangThaiCu,TrangThaiMoi,NguoiThucHienID,GhiChu) VALUES(?,?,'DA_HUY',?,?)",[id,o.TrangThai,user.id,reason],c);await q("UPDATE ThanhToan SET TrangThai='DA_HUY' WHERE DonHangID=? AND TrangThai='CHO_XAC_NHAN'",[id],c);await reserveRefunds(c,user,id,reason);await audit(user,'HUY_DON','DonHang',id,reason,c);}
-let expiring=false;
-export async function expireUnpaidOrders(){
-  if(expiring)return 0;expiring=true;let count=0;
-  try{
-    const ids=await q("SELECT DonHangID id FROM DonHang WHERE HanThanhToan<=UTC_TIMESTAMP() AND TrangThai IN ('CHO_XAC_NHAN','DA_XAC_NHAN','DANG_CHUAN_BI') ORDER BY DonHangID LIMIT 100");
-    for(const row of ids)await tx(async c=>{
-      const [o]=await q('SELECT * FROM DonHang WHERE DonHangID=? FOR UPDATE',[row.id],c);
-      if(!o||!['CHO_XAC_NHAN','DA_XAC_NHAN','DANG_CHUAN_BI'].includes(o.TrangThai)||!o.HanThanhToan||new Date(o.HanThanhToan)>new Date())return;
-      const [{paid}]=await q("SELECT COALESCE(SUM(SoTien),0) paid FROM ThanhToan WHERE DonHangID=? AND TrangThai='DA_XAC_NHAN'",[row.id],c);if(paid>0)return;
-      await cancelOrder(c,{id:null},row.id,'Hệ thống: hết thời hạn chờ thanh toán',false);
-      await q("UPDATE ThanhToan SET TrangThai='HET_HAN' WHERE DonHangID=? AND TrangThai='DA_HUY'",[row.id],c);count++;
-    });return count;
-  }finally{expiring=false;}
-}
-router.post('/orders/:id/cancel',run(async r=>{await tx(c=>cancelOrder(c,r.user,positive(r.params.id),text(r.body.reason)||'Khách hủy đơn',true));return {ok:true};}));
-router.post('/reviews',run(async r=>{const stars=Number(r.body.stars);if(!Number.isInteger(stars)||stars<1||stars>5)fail('Số sao từ 1 đến 5.');const [line]=await q("SELECT c.DonHangID FROM ChiTietDonHang c JOIN DonHang d ON d.DonHangID=c.DonHangID WHERE c.ChiTietDonHangID=? AND d.KhachHangID=? AND d.TrangThai='HOAN_THANH'",[positive(r.body.itemId),r.user.id]);if(!line)fail('Chỉ đánh giá sản phẩm trong đơn đã hoàn thành.');await q('INSERT INTO DanhGia(DonHangID,ChiTietDonHangID,KhachHangID,SoSao,NoiDung) VALUES(?,?,?,?,?)',[line.DonHangID,r.body.itemId,r.user.id,stars,text(r.body.content,2000)]);return {ok:true};}));
-router.get('/returns',run(async r=>await q('SELECT YeuCauDoiTraID id,MaYeuCau code,LoaiYeuCau type,LyDo reason,TrangThai status,NgayTao date FROM YeuCauDoiTra WHERE KhachHangID=? ORDER BY YeuCauDoiTraID DESC',[r.user.id])));
-router.post('/returns',run(async r=>{await tx(async c=>{const item=positive(r.body.itemId),qty=positive(r.body.quantity);const requestId=r.body.requestId||randomUUID();if(!/^[a-f\d-]{36}$/i.test(requestId))fail('Mã chống lặp không hợp lệ.');await q('SELECT TaiKhoanID FROM TaiKhoan WHERE TaiKhoanID=? FOR UPDATE',[r.user.id],c);const [old]=await q('SELECT YeuCauDoiTraID id,KhachHangID owner FROM YeuCauDoiTra WHERE MaChongLap=?',[requestId],c);if(old){if(old.owner!==r.user.id)fail('Mã yêu cầu đã sử dụng.',409);return {id:old.id};}const [l]=await q("SELECT ct.*,d.KhachHangID,d.NgayGiao FROM ChiTietDonHang ct JOIN DonHang d ON d.DonHangID=ct.DonHangID WHERE ct.ChiTietDonHangID=? AND d.KhachHangID=? AND d.TrangThai IN ('DA_GIAO','HOAN_THANH') FOR UPDATE",[item,r.user.id],c);if(!l)fail('Đơn chưa đủ điều kiện đổi/trả.');if(!l.NgayGiao||Date.now()-new Date(l.NgayGiao).getTime()>storeConfig.returnDays*86400000)fail('Đã hết thời hạn '+storeConfig.returnDays+' ngày gửi yêu cầu trả hàng.');const [{n}]=await q("SELECT COALESCE(SUM(ct.SoLuongYeuCau),0) n FROM ChiTietDoiTra ct JOIN YeuCauDoiTra y ON y.YeuCauDoiTraID=ct.YeuCauDoiTraID WHERE ct.ChiTietDonHangID=? AND y.TrangThai NOT IN ('TU_CHOI','DA_HUY')",[item],c);if(Number(n)+qty>l.SoLuong)fail('Số lượng vượt quá đơn.');if(r.body.type!=='TRA')fail('Đổi size được xử lý bằng trả hàng, hoàn tiền và đặt đơn mới.');const a=await q('INSERT INTO YeuCauDoiTra(MaYeuCau,MaChongLap,DonHangID,KhachHangID,LoaiYeuCau,LyDo) VALUES(?,?,?,?,?,?)',[code('DT'),requestId,l.DonHangID,r.user.id,r.body.type,required(r.body.reason,'lý do')],c);await q('INSERT INTO ChiTietDoiTra(YeuCauDoiTraID,DonHangID,ChiTietDonHangID,SoLuongYeuCau) VALUES(?,?,?,?)',[a.insertId,l.DonHangID,item,qty],c);if(r.body.image){if(!/^https?:\/\//.test(r.body.image))fail('Ảnh bằng chứng phải là URL http/https.');await q('INSERT INTO HinhAnhDoiTra(YeuCauDoiTraID,DuongDan) VALUES(?,?)',[a.insertId,productImage(r.body.image)],c);}await q("INSERT INTO LichSuDoiTra(YeuCauDoiTraID,TrangThaiMoi,NguoiThucHienID,NoiDung) VALUES(?,'CHO_DUYET',?,'Khách gửi yêu cầu')",[a.insertId,r.user.id],c);});return {ok:true};}));
-
-router.get('/returns/:id',run(async r=>{
-  const [y]=await q('SELECT YeuCauDoiTraID id,MaYeuCau code,TrangThai status,LyDo reason,LyDoXuLy decision,DonHangID orderId FROM YeuCauDoiTra WHERE YeuCauDoiTraID=? AND KhachHangID=?',[positive(r.params.id),r.user.id]);if(!y)fail('Không tìm thấy yêu cầu.',404);
-  y.items=await q('SELECT ct.TenSanPhamLucMua name,c.SoLuongYeuCau quantity,c.SoLuongDuyet approved,c.SoLuongDaNhan received,c.SoLuongBanLai sellable,c.TienHoanDuocDuyet refund FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=?',[y.id]);
-  y.history=await q('SELECT TrangThaiMoi status,ThoiDiem date,NoiDung note FROM LichSuDoiTra WHERE YeuCauDoiTraID=? ORDER BY LichSuID',[y.id]);
-  y.refunds=await q('SELECT SoTien amount,TrangThai status,NgayXacNhan confirmedAt FROM HoanTien WHERE YeuCauDoiTraID=?',[y.id]);return y;
-}));
-installOperations(router,{manager,run});
-
-router.get('/manage/products',manager,run(async()=>await q(productSelect+' ORDER BY s.SanPhamID DESC')));
-router.post('/manage/sizes',manager,run(async r=>tx(async c=>{
-  const raw=String(r.body.name??'').trim().replace(',','.');
-  if(!/^\d{1,3}(?:\.\d{1,2})?$/.test(raw)||Number(raw)<=0)fail('Size EU phải là số dương, ví dụ 42 hoặc 42.5.');
-  const value=String(Number(raw));
-  await q("INSERT INTO KichCo(HeSize,GiaTri,ThuTu) VALUES('EU',?,?) ON DUPLICATE KEY UPDATE DangHoatDong=1",[value,Math.floor(Number(value))],c);
-  return (await q("SELECT KichCoID id,GiaTri name FROM KichCo WHERE HeSize='EU' AND GiaTri=?",[value],c))[0];
-})));
-router.post('/manage/colors',manager,run(async r=>tx(async c=>{
-  const name=String(r.body.name??'').trim().replace(/\s+/g,' ');
-  const hex=String(r.body.hex??'').trim();
-  if(!name||name.length>100)fail('Tên màu phải từ 1 đến 100 ký tự.');
-  if(hex&&!/^#[a-f0-9]{6}$/i.test(hex))fail('Mã màu cần có dạng #RRGGBB.');
-  await q('INSERT INTO MauSac(TenMau,MaHex) VALUES(?,?) ON DUPLICATE KEY UPDATE DangHoatDong=1',[name,hex||null],c);
-  return (await q('SELECT MauSacID id,TenMau name FROM MauSac WHERE TenMau=?',[name],c))[0];
-})));
-router.get('/manage/lookups',manager,run(async()=>({categories:await q('SELECT DanhMucID id,TenDanhMuc name,DangHoatDong active,LaBanNhap draft FROM DanhMuc'),brands:await q('SELECT ThuongHieuID id,TenThuongHieu name,DangHoatDong active,LaBanNhap draft FROM ThuongHieu'),sizes:await q('SELECT KichCoID id,GiaTri name FROM KichCo ORDER BY ThuTu,CAST(GiaTri AS DECIMAL(8,2))'),colors:await q('SELECT MauSacID id,TenMau name FROM MauSac')})));
-function productStatus(value){
-  if(value==='NHAP')return 'AN'; // Accept forms from before drafts were merged with hidden products.
-  if(!['AN','DANG_BAN','NGUNG_BAN'].includes(value))fail('Trạng thái sản phẩm không hợp lệ.');
-  return value;
-}
-function productImage(value){
-  const url=String(value??'').trim();
-  if(url && (url.length>1000 || !/^(https?:\/\/[^\s/]+|\/images\/[^\s]+)/i.test(url)))fail('Nhập URL ảnh HTTP(S) hoặc đường dẫn /images/ của cửa hàng.');
-  return url;
-}
-router.post('/manage/products',manager,run(async r=>await tx(async c=>{const a=await q('INSERT INTO SanPham(MaSanPham,TenSanPham,MoTa,GiaBan,DanhMucID,ThuongHieuID,TrangThai,NguoiTaoID) VALUES(?,?,?,?,?,?,?,?)',[required(r.body.code,'mã sản phẩm'),required(r.body.name,'tên sản phẩm'),text(r.body.description,8000),price(r.body.price),positive(r.body.categoryId),positive(r.body.brandId),productStatus(r.body.status||'DANG_BAN'),r.user.id],c);if(r.body.image)await q('INSERT INTO HinhAnhSanPham(SanPhamID,DuongDan,LaAnhChinh) VALUES(?,?,1)',[a.insertId,text(r.body.image,1000)],c);await audit(r.user,'TAO_SAN_PHAM','SanPham',a.insertId,r.body.name,c);return {id:a.insertId};})));
-router.put('/manage/products/:id',manager,run(async r=>tx(async c=>{
-  const id=positive(r.params.id), body=r.body;
-  const [p]=await q('SELECT MaSanPham code,TenSanPham name,MoTa description,GiaBan price,DanhMucID categoryId,ThuongHieuID brandId,TrangThai status FROM SanPham WHERE SanPhamID=? FOR UPDATE',[id],c);
-  if(!p)fail('Không tìm thấy sản phẩm.',404);
-  const status=productStatus(body.status??p.status);
-  const [photo]=await q('SELECT HinhAnhID id,DuongDan image,BienTheID variant FROM HinhAnhSanPham WHERE SanPhamID=? ORDER BY LaAnhChinh DESC,ThuTu,HinhAnhID LIMIT 1 FOR UPDATE',[id],c);
-  p.image=photo?.image??'';
-  const changed=['code','name','description','price','categoryId','brandId','image'].some(key=>key in body && String(body[key]??'')!==String(p[key]??''));
-  if(changed && p.status!=='AN')fail('Hãy lưu trạng thái Ẩn trước khi chỉnh sửa thông tin hoặc ảnh sản phẩm.',409);
-  if(changed){
-    const data={...p,...body};
-    await q('UPDATE SanPham SET MaSanPham=?,TenSanPham=?,MoTa=?,GiaBan=?,DanhMucID=?,ThuongHieuID=? WHERE SanPhamID=?',[required(data.code,'mã sản phẩm'),required(data.name,'tên'),text(data.description,8000),price(data.price),positive(data.categoryId),positive(data.brandId),id],c);
-    if('image' in body && body.image!==p.image){
-      const image=productImage(body.image);
-      if(photo && photo.variant==null){
-        if(image)await q('UPDATE HinhAnhSanPham SET DuongDan=?,LaAnhChinh=1 WHERE HinhAnhID=?',[image,photo.id],c);
-        else await q('DELETE FROM HinhAnhSanPham WHERE HinhAnhID=?',[photo.id],c);
-      }else if(image){
-        await q('UPDATE HinhAnhSanPham SET LaAnhChinh=0 WHERE SanPhamID=? AND LaAnhChinh=1',[id],c);
-        await q('INSERT INTO HinhAnhSanPham(SanPhamID,DuongDan,LaAnhChinh) VALUES(?,?,1)',[id,image],c);
-      }
-    }
-  }
-  await q('UPDATE SanPham SET TrangThai=?,NgayCapNhat=UTC_TIMESTAMP(),PhienBan=PhienBan+1 WHERE SanPhamID=?',[status,id],c);
-  await audit(r.user,'SUA_SAN_PHAM','SanPham',id,body.name??p.name,c);
-  return {ok:true};
-})));
-
-router.get('/manage/variants',manager,run(async()=>await q(`SELECT b.BienTheID id,b.SanPhamID productId,b.KichCoID sizeId,b.MauSacID colorId,b.GiaBanRieng price,b.SKU sku,s.MaSanPham productCode,s.TenSanPham name,kc.GiaTri size,m.TenMau color,b.DangKinhDoanh active,k.SoLuongTon stock,k.SoLuongDaPhanBo reserved,k.SoLuongKhaDung available,k.MucCanhBao warning FROM BienTheSanPham b JOIN SanPham s ON s.SanPhamID=b.SanPhamID JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID JOIN TonKho k ON k.BienTheID=b.BienTheID ORDER BY s.SanPhamID,b.BienTheID`)));
-router.post('/manage/variants',manager,run(async r=>await tx(async c=>{const a=await q('INSERT INTO BienTheSanPham(SanPhamID,SKU,KichCoID,MauSacID,GiaBanRieng) VALUES(?,?,?,?,?)',[positive(r.body.productId),required(r.body.sku,'SKU'),positive(r.body.sizeId),positive(r.body.colorId),r.body.price?price(r.body.price):null],c);await q('INSERT INTO TonKho(BienTheID) VALUES(?)',[a.insertId],c);await audit(r.user,'TAO_BIEN_THE','BienTheSanPham',a.insertId,r.body.sku,c);return {id:a.insertId};})));
-router.put('/manage/variants/:id',manager,run(async r=>{await tx(async c=>{const [old]=await q('SELECT * FROM BienTheSanPham WHERE BienTheID=? FOR UPDATE',[positive(r.params.id)],c);if(!old)fail('Không có biến thể.');if(![0,1].includes(Number(r.body.active))||r.body.active==null)fail('Trạng thái không hợp lệ.');if(old.DangKinhDoanh && ['sizeId','colorId','price','sku'].some(key=>key in r.body))fail('Hãy ẩn biến thể trước khi sửa.',409);if(r.body.sizeId&&r.body.colorId){const [{n}]=await q('SELECT COUNT(*) n FROM ChiTietDonHang WHERE BienTheID=?',[old.BienTheID],c);if(n&&(Number(r.body.sizeId)!==old.KichCoID||Number(r.body.colorId)!==old.MauSacID))fail('Biến thể đã giao dịch không được đổi size/màu; hãy tạo biến thể mới.');await q('UPDATE BienTheSanPham SET KichCoID=?,MauSacID=?,GiaBanRieng=? WHERE BienTheID=?',[positive(r.body.sizeId),positive(r.body.colorId),r.body.price?price(r.body.price):null,old.BienTheID],c);}await q('UPDATE BienTheSanPham SET DangKinhDoanh=?,NgayCapNhat=UTC_TIMESTAMP() WHERE BienTheID=?',[r.body.active?1:0,old.BienTheID],c);await audit(r.user,'AN_HIEN_BIEN_THE','BienTheSanPham',r.params.id,String(!!r.body.active),c);});return {ok:true};}));
-router.delete('/manage/variants/:id',manager,run(async r=>tx(async c=>{
- const id=positive(r.params.id);
- const [variant]=await q('SELECT SKU,DangKinhDoanh FROM BienTheSanPham WHERE BienTheID=? FOR UPDATE',[id],c);
- if(!variant)fail('Không tìm thấy biến thể.',404);
- if(variant.DangKinhDoanh)fail('Hãy ẩn biến thể trước khi xóa.',409);
- const [stock]=await q('SELECT SoLuongTon,SoLuongDaPhanBo FROM TonKho WHERE BienTheID=? FOR UPDATE',[id],c);
- if(stock&&(stock.SoLuongTon||stock.SoLuongDaPhanBo))fail('Biến thể còn tồn kho hoặc đang giữ hàng.',409);
- try{
-   await q('DELETE FROM TonKho WHERE BienTheID=?',[id],c);
-   await q('DELETE FROM BienTheSanPham WHERE BienTheID=?',[id],c);
- }catch(error){
-   if(error.code==='ER_ROW_IS_REFERENCED_2')fail('Biến thể còn liên kết với dữ liệu cửa hàng nên chưa thể xóa.',409);
-   throw error;
- }
- await audit(r.user,'XOA_BIEN_THE','BienTheSanPham',id,variant.SKU,c);
- return {ok:true};
-})));
-function taxonomyState(body,defaultActive){
- const status=body.status??((body.active??defaultActive)?'HOAT_DONG':'AN');
- if(!['NHAP','HOAT_DONG','AN'].includes(status))fail('Trạng thái không hợp lệ.');
- return [Number(status==='HOAT_DONG'),Number(status!=='HOAT_DONG')];
-}
-async function deleteCatalogDraft(r,table,col){
- const id=positive(r.params.id);
- return tx(async c=>{
-   const product=table==='SanPham';
-   const flag=product?"TrangThai='AN'":"DangHoatDong=0";
-   const [item]=await q(`SELECT (${flag}) draft FROM ${table} WHERE ${col}=? FOR UPDATE`,[id],c);
-   if(!item)fail('Không tìm thấy mục cần xóa.',404);
-   if(!item.draft)fail(product?'Hãy ẩn sản phẩm trước khi xóa.':'Hãy ẩn mục này trước khi xóa.',409);
-   try{
-     if(product){
-       const stocks=await q('SELECT k.SoLuongTon,k.SoLuongDaPhanBo FROM BienTheSanPham b JOIN TonKho k ON k.BienTheID=b.BienTheID WHERE b.SanPhamID=? FOR UPDATE',[id],c);
-       if(stocks.some(k=>k.SoLuongTon||k.SoLuongDaPhanBo))fail('Sản phẩm còn tồn kho hoặc đang giữ hàng.',409);
-       await q('DELETE FROM HinhAnhSanPham WHERE SanPhamID=?',[id],c);
-       await q('DELETE k FROM TonKho k JOIN BienTheSanPham b ON b.BienTheID=k.BienTheID WHERE b.SanPhamID=?',[id],c);
-       await q('DELETE FROM BienTheSanPham WHERE SanPhamID=?',[id],c);
-     }
-     await q(`DELETE FROM ${table} WHERE ${col}=?`,[id],c);
-   }catch(error){
-     if(error.code==='ER_ROW_IS_REFERENCED_2')fail('Mục này đang được tham chiếu trong cửa hàng nên chưa thể xóa.',409);
-     throw error;
-   }
-   await audit(r.user,product?'XOA_SAN_PHAM':'XOA_BAN_NHAP',table,id,product?'Xóa sản phẩm ẩn':'Xóa bản nháp',c);
-   return {ok:true};
- });
-}
-router.delete('/manage/products/:id',manager,run(r=>deleteCatalogDraft(r,'SanPham','SanPhamID')));
-for(const [route,table,col]of [['categories','DanhMuc','DanhMucID'],['brands','ThuongHieu','ThuongHieuID']]){
- router.post('/manage/'+route,manager,run(async r=>{const a=await q(`INSERT INTO ${table}(Ten${table},MoTa,DangHoatDong,LaBanNhap) VALUES(?,?,?,?)`,[required(r.body.name,'tên'),text(r.body.description),...taxonomyState(r.body,true)]);await audit(r.user,'TAO_DANH_MUC',table,a.insertId,r.body.name);return {id:a.insertId};}));
- router.delete('/manage/'+route+'/:id',manager,run(r=>deleteCatalogDraft(r,table,col)));
- router.put('/manage/'+route+'/:id',manager,run(async r=>{await q(`UPDATE ${table} SET Ten${table}=?,DangHoatDong=?,LaBanNhap=?,NgayCapNhat=UTC_TIMESTAMP() WHERE ${col}=?`,[required(r.body.name,'tên'),...taxonomyState(r.body,false),positive(r.params.id)]);await audit(r.user,'SUA_DANH_MUC',table,r.params.id,r.body.name);return {ok:true};}));
-}
-router.post('/manage/stock',manager,run(async()=>fail('Vui lòng lập phiếu kho nháp rồi xác nhận tại mục Phiếu kho.',409)));
-router.get('/manage/orders',manager,run(async()=>await q(ordersSql+' ORDER BY d.DonHangID DESC')));
-router.post('/manage/orders/:id/status',manager,run(async r=>{await tx(async c=>{const id=positive(r.params.id);if(r.body.status==='DA_HUY')return cancelOrder(c,r.user,id,required(r.body.reason,'lý do hủy'),false);const [o]=await q('SELECT * FROM DonHang WHERE DonHangID=? FOR UPDATE',[id],c);if(!o)fail('Không có đơn.',404);const sequence=['CHO_XAC_NHAN','DA_XAC_NHAN','DANG_CHUAN_BI','DANG_GIAO','DA_GIAO','HOAN_THANH'];if(sequence[sequence.indexOf(o.TrangThai)+1]!==r.body.status)fail('Trạng thái chuyển tiếp không hợp lệ.');
-  const [method]=await q('SELECT MaPhuongThuc code FROM PhuongThucThanhToan WHERE PhuongThucID=?',[o.PhuongThucID],c);
-  if(method.code!=='COD'){const [{paid}]=await q("SELECT COALESCE(SUM(SoTien),0) paid FROM ThanhToan WHERE DonHangID=? AND TrangThai='DA_XAC_NHAN'",[id],c);if(paid<o.TongThanhToan)fail('Cần đối soát thu đủ tiền chuyển khoản trước khi xác nhận/xử lý đơn.');}
-  if(r.body.status==='DA_GIAO'&&['GIAO_THAT_BAI','CHO_HOAN_VE'].includes(o.TrangThaiGiaoHang))fail('Cần xử lý giao thất bại trước khi xác nhận đã giao.');
-  if(r.body.status==='DANG_GIAO')await q("UPDATE DonHang SET TrangThaiGiaoHang='DANG_GIAO' WHERE DonHangID=?",[id],c);
-  if(r.body.status==='DA_GIAO')await q("UPDATE DonHang SET TrangThaiGiaoHang='DA_GIAO' WHERE DonHangID=?",[id],c);
-if(r.body.status==='DANG_GIAO'){const lines=await q("SELECT ct.*,p.SoLuongGiu FROM ChiTietDonHang ct JOIN PhanBoTonKho p ON p.ChiTietDonHangID=ct.ChiTietDonHangID WHERE ct.DonHangID=? AND p.TrangThai='DANG_GIU' ORDER BY ct.BienTheID FOR UPDATE",[id],c);for(const l of lines){await stockLog(c,r.user,l.BienTheID,'BAN_HANG',-l.SoLuongGiu,-l.SoLuongGiu,l.ChiTietDonHangID,null,'Xuất giao đơn');await q("UPDATE PhanBoTonKho SET TrangThai='DA_XUAT',NgayKetThuc=UTC_TIMESTAMP() WHERE ChiTietDonHangID=?",[l.ChiTietDonHangID],c);}}
-  if(r.body.status==='HOAN_THANH'){const [{paid}]=await q("SELECT COALESCE(SUM(SoTien),0) paid FROM ThanhToan WHERE DonHangID=? AND TrangThai='DA_XAC_NHAN'",[id],c);if(paid<o.TongThanhToan)fail('Cần xác nhận thu đủ tiền trước khi hoàn thành đơn.');}
-  await q("UPDATE DonHang SET TrangThai=?,NgayGiao=IF(?='DA_GIAO',UTC_TIMESTAMP(),NgayGiao),NgayHoanThanh=IF(?='HOAN_THANH',UTC_TIMESTAMP(),NgayHoanThanh),PhienBan=PhienBan+1 WHERE DonHangID=?",[r.body.status,r.body.status,r.body.status,id],c);await q('INSERT INTO LichSuDonHang(DonHangID,TrangThaiCu,TrangThaiMoi,NguoiThucHienID,GhiChu) VALUES(?,?,?,?,?)',[id,o.TrangThai,r.body.status,r.user.id,text(r.body.reason)],c);await audit(r.user,'CHUYEN_TRANG_THAI','DonHang',id,r.body.status,c);});return {ok:true};}));
-router.post('/manage/payments/:id/confirm',manager,run(async r=>{await tx(async c=>{
-  const [lookup]=await q('SELECT DonHangID FROM ThanhToan WHERE ThanhToanID=?',[positive(r.params.id)],c);if(!lookup)fail('Không có giao dịch.');
-  const [d]=await q('SELECT d.*,m.MaPhuongThuc FROM DonHang d JOIN PhuongThucThanhToan m ON m.PhuongThucID=d.PhuongThucID WHERE d.DonHangID=? FOR UPDATE',[lookup.DonHangID],c);
-  const [p]=await q('SELECT * FROM ThanhToan WHERE ThanhToanID=? FOR UPDATE',[positive(r.params.id)],c);if(p.TrangThai==='DA_XAC_NHAN')return;
-  if(d.TrangThai==='DA_HUY'||p.TrangThai!=='CHO_XAC_NHAN'||(d.MaPhuongThuc==='COD'&&!['DA_GIAO','HOAN_THANH'].includes(d.TrangThai)))fail('Chỉ xác nhận COD sau khi giao thành công; đơn hủy cần đối soát tiền đến muộn.');
-  if(d.HanThanhToan&&new Date(d.HanThanhToan)<=new Date())fail('Đã hết hạn thanh toán. Vui lòng tải lại đơn và xử lý tiền đến muộn nếu đã thực nhận.');
-  const [{paid}]=await q("SELECT COALESCE(SUM(SoTien),0) paid FROM ThanhToan WHERE DonHangID=? AND TrangThai='DA_XAC_NHAN'",[d.DonHangID],c);if(paid+p.SoTien>d.TongThanhToan)fail('Khoản thu vượt giá trị đơn.');
-  const proof=required(r.body.proof,'bằng chứng thu tiền');await q("UPDATE ThanhToan SET TrangThai='DA_XAC_NHAN',NgayXacNhan=UTC_TIMESTAMP(),NguoiXacNhanID=?,BangChung=? WHERE ThanhToanID=?",[r.user.id,proof,p.ThanhToanID],c);
-  await q('UPDATE DonHang SET HanThanhToan=NULL WHERE DonHangID=?',[d.DonHangID],c);await audit(r.user,'XAC_NHAN_THU','ThanhToan',p.ThanhToanID,proof,c);
-});return {ok:true};}));
-router.get('/manage/promotions',manager,run(async()=>await q('SELECT KhuyenMaiID id,MaKhuyenMai code,TenKhuyenMai name,HinhThuc type,GiaTri value,GiaTriDonToiThieu minimum,IF(HinhThuc=\'PHAN_TRAM\',GiamToiDa,NULL) maximum,TrangThai status,BatDauLuc start,KetThucLuc end,('+publicPromotionCondition+') visible FROM KhuyenMai k ORDER BY KhuyenMaiID DESC')));
-router.post('/manage/promotions',manager,run(createPromotion));
-router.put('/manage/promotions/:id',manager,run(updatePromotion));
-router.delete('/manage/promotions/:id',manager,run(deleteDraft));
-router.get('/manage/customers',manager,run(async()=>await q("SELECT t.TaiKhoanID id,t.HoTen name,t.Email email,t.SoDienThoai phone,COUNT(d.DonHangID) orders,COALESCE(SUM(d.TongThanhToan),0) total FROM TaiKhoan t JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID AND v.MaVaiTro='CUSTOMER' LEFT JOIN DonHang d ON d.KhachHangID=t.TaiKhoanID WHERE t.NgayXoa IS NULL GROUP BY t.TaiKhoanID ORDER BY t.TaiKhoanID")));
-router.get('/manage/returns',manager,run(async()=>await q('SELECT y.YeuCauDoiTraID id,y.MaYeuCau code,y.LoaiYeuCau type,y.LyDo reason,y.TrangThai status,y.NgayTao date,t.HoTen name,ct.TenSanPhamLucMua product,c.SoLuongYeuCau quantity,c.SoLuongBanLai restocked,c.TienHoanDuocDuyet refund,(SELECT DuongDan FROM HinhAnhDoiTra h WHERE h.YeuCauDoiTraID=y.YeuCauDoiTraID LIMIT 1) image FROM YeuCauDoiTra y JOIN TaiKhoan t ON t.TaiKhoanID=y.KhachHangID JOIN ChiTietDoiTra c ON c.YeuCauDoiTraID=y.YeuCauDoiTraID JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID ORDER BY y.YeuCauDoiTraID DESC')));
-router.post('/manage/returns/:id/action',manager,run(async r=>{await tx(async c=>{const id=positive(r.params.id),action=r.body.action;const [y]=await q('SELECT * FROM YeuCauDoiTra WHERE YeuCauDoiTraID=? FOR UPDATE',[id],c);if(!y)fail('Không có yêu cầu.');const lines=await q('SELECT c.*,ct.BienTheID,ct.SoLuong bought,ct.ThanhTien paid FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=? FOR UPDATE',[id],c);let status;
-  if(['approve','reject'].includes(action)){if(y.TrangThai!=='CHO_DUYET')fail('Yêu cầu đã được duyệt.');status=action==='approve'?'DA_DUYET':'TU_CHOI';if(action==='approve')for(const l of lines){await q('UPDATE ChiTietDoiTra SET SoLuongDuyet=SoLuongYeuCau,TienHoanDuocDuyet=? WHERE ChiTietDoiTraID=?',[Math.floor(l.paid*l.SoLuongYeuCau/l.bought),l.ChiTietDoiTraID],c);}await q('UPDATE YeuCauDoiTra SET NguoiDuyetID=?,NgayDuyet=UTC_TIMESTAMP(),LyDoXuLy=? WHERE YeuCauDoiTraID=?',[r.user.id,required(r.body.reason,'lý do xử lý'),id],c);}
-  else if(action==='receive'){if(y.TrangThai!=='DA_DUYET')fail('Chỉ nhận hàng một lần sau khi duyệt.');status='DANG_XU_LY';for(const l of lines){const sellable=r.body.sellable?l.SoLuongDuyet:0;await q('UPDATE ChiTietDoiTra SET SoLuongDaNhan=SoLuongDuyet,SoLuongBanLai=?,NguoiNhanHangID=?,NgayNhanHang=UTC_TIMESTAMP(),TinhTrangHang=? WHERE ChiTietDoiTraID=?',[sellable,r.user.id,text(r.body.reason),l.ChiTietDoiTraID],c);if(sellable){const a=await q("INSERT INTO PhieuKho(MaPhieu,MaChongLap,LoaiPhieu,LyDo,NguoiThucHienID) VALUES(?,?,'NHAN_TRA',?,?)",[code('HT'),randomUUID(),'Nhận hàng trả '+y.MaYeuCau,r.user.id],c);const p=await q('INSERT INTO ChiTietPhieuKho(PhieuKhoID,BienTheID,SoLuongThayDoi,ChiTietDoiTraID) VALUES(?,?,?,?)',[a.insertId,l.BienTheID,sellable,l.ChiTietDoiTraID],c);await stockLog(c,r.user,l.BienTheID,'NHAN_TRA',sellable,0,null,p.insertId,'Hàng trả đủ điều kiện bán lại');}}
-   await prepareReturnRefunds(c,id,y.DonHangID,y.LyDo);}
-  else if(action==='prepare-refund'){if(y.TrangThai!=='DANG_XU_LY')fail('Cần nhận hàng trước khi lập khoản hoàn.');await prepareReturnRefunds(c,id,y.DonHangID,y.LyDo);status='DANG_XU_LY';}
-  else if(action==='complete'){if(y.TrangThai!=='DANG_XU_LY')fail('Cần nhận và kiểm tra hàng trước.');const [{n}]=await q("SELECT COUNT(*) n FROM HoanTien WHERE YeuCauDoiTraID=? AND TrangThai<>'DA_XAC_NHAN'",[id],c);if(n)fail('Cần xác nhận hoàn tiền trước khi hoàn tất.');const [{owed}]=await q('SELECT COALESCE(SUM(TienHoanDuocDuyet),0) owed FROM ChiTietDoiTra WHERE YeuCauDoiTraID=?',[id],c);const [{refunded}]=await q("SELECT COALESCE(SUM(SoTien),0) refunded FROM HoanTien WHERE YeuCauDoiTraID=? AND TrangThai='DA_XAC_NHAN'",[id],c);if(refunded<owed)fail('Chưa hoàn đủ tiền được duyệt. Đối soát khoản thu rồi lập bổ sung khoản hoàn.');status='HOAN_TAT';await q('UPDATE YeuCauDoiTra SET NgayHoanTat=UTC_TIMESTAMP() WHERE YeuCauDoiTraID=?',[id],c);}else fail('Thao tác không hợp lệ.');
-  await q('UPDATE YeuCauDoiTra SET TrangThai=? WHERE YeuCauDoiTraID=?',[status,id],c);await q('INSERT INTO LichSuDoiTra(YeuCauDoiTraID,TrangThaiCu,TrangThaiMoi,NguoiThucHienID,NoiDung) VALUES(?,?,?,?,?)',[id,y.TrangThai,status,r.user.id,text(r.body.reason)||action],c);await audit(r.user,'XU_LY_DOI_TRA','YeuCauDoiTra',id,action,c);});return {ok:true};}));
-router.get('/manage/refunds',manager,run(async()=>await q('SELECT h.HoanTienID id,d.MaDonHang code,h.SoTien amount,h.TrangThai status,h.LyDo reason,h.NgayTao date FROM HoanTien h JOIN DonHang d ON d.DonHangID=h.DonHangID ORDER BY h.HoanTienID DESC')));
-router.post('/manage/refunds/:id/confirm',manager,run(async r=>{await tx(async c=>{const [h]=await q('SELECT * FROM HoanTien WHERE HoanTienID=? FOR UPDATE',[positive(r.params.id)],c);if(!h)fail('Không có khoản hoàn.');if(h.TrangThai==='DA_XAC_NHAN')return;if(!['CHO_XU_LY','DANG_XU_LY'].includes(h.TrangThai))fail('Khoản hoàn cần ở trạng thái chờ; hãy thử lại nếu đã thất bại.');const [payment]=await q('SELECT * FROM ThanhToan WHERE ThanhToanID=? FOR UPDATE',[h.ThanhToanID],c);const [{returned}]=await q("SELECT COALESCE(SUM(SoTien),0) returned FROM HoanTien WHERE ThanhToanID=? AND TrangThai='DA_XAC_NHAN'",[h.ThanhToanID],c);if(!payment||payment.TrangThai!=='DA_XAC_NHAN'||returned+h.SoTien>payment.SoTien)fail('Tổng hoàn vượt tiền thực thu.');await q("UPDATE HoanTien SET TrangThai='DA_XAC_NHAN',NgayXacNhan=UTC_TIMESTAMP(),NguoiXuLyID=?,BangChung=? WHERE HoanTienID=?",[r.user.id,required(r.body.proof,'bằng chứng hoàn tiền'),h.HoanTienID],c);await audit(r.user,'XAC_NHAN_HOAN','HoanTien',h.HoanTienID,'Xác nhận có bằng chứng',c);});return {ok:true};}));
-router.get('/manage/reports',manager,run(async r=>{
- const from=text(r.query.from)||new Date(Date.now()-30*86400000).toISOString().slice(0,10),to=text(r.query.to)||new Date().toISOString().slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||from>to)fail('Khoảng ngày không hợp lệ.');const args=[new Date(from+'T00:00:00+07:00'),new Date(new Date(to+'T00:00:00+07:00').getTime()+86400000)];
- const [income]=await q("SELECT COALESCE(SUM(SoTien),0) value FROM ThanhToan WHERE TrangThai='DA_XAC_NHAN' AND NgayXacNhan>=? AND NgayXacNhan<?",args);
- const [refund]=await q("SELECT COALESCE(SUM(SoTien),0) value FROM HoanTien WHERE TrangThai='DA_XAC_NHAN' AND NgayXacNhan>=? AND NgayXacNhan<?",args);
- return {from,to,income:income.value,refund:refund.value,revenue:income.value-refund.value,orders:await q('SELECT TrangThai status,COUNT(*) count FROM DonHang WHERE NgayDat>=? AND NgayDat<? GROUP BY TrangThai',args),daily:await q("SELECT DATE(CONVERT_TZ(NgayXacNhan,'+00:00','+07:00')) day,SUM(SoTien) amount FROM ThanhToan WHERE TrangThai='DA_XAC_NHAN' AND NgayXacNhan>=? AND NgayXacNhan<? GROUP BY DATE(CONVERT_TZ(NgayXacNhan,'+00:00','+07:00'))",args),top:await q("SELECT ct.TenSanPhamLucMua name,SUM(ct.SoLuong) quantity,SUM(ct.ThanhTien) amount FROM ChiTietDonHang ct JOIN DonHang d ON d.DonHangID=ct.DonHangID WHERE d.TrangThai='HOAN_THANH' AND d.NgayHoanThanh>=? AND d.NgayHoanThanh<? GROUP BY ct.TenSanPhamLucMua ORDER BY quantity DESC LIMIT 5",args),lowStock:(await q('SELECT COUNT(*) n FROM TonKho WHERE SoLuongKhaDung<=MucCanhBao'))[0].n};
-}));
-
-router.get('/admin/accounts',admin,run(async()=>await q("SELECT t.TaiKhoanID id,t.HoTen name,t.Email email,t.TenDangNhap username,t.SoDienThoai phone,t.TrangThai status,t.NgayTao date,GROUP_CONCAT(v.MaVaiTro) roles FROM TaiKhoan t LEFT JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID LEFT JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE t.NgayXoa IS NULL GROUP BY t.TaiKhoanID ORDER BY t.TaiKhoanID")));
-router.post('/admin/accounts',admin,run(async r=>{const password=String(r.body.password||'');if(password.length<8||password.length>128)fail('Mật khẩu cần từ 8 đến 128 ký tự.');if(!['CUSTOMER','SHOP_MANAGER'].includes(r.body.role))fail('Chỉ được tạo tài khoản khách hàng hoặc quản lý shop.');return await tx(async c=>{const email=required(r.body.email,'email');if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))fail('Email không hợp lệ.');const a=await q('INSERT INTO TaiKhoan(TenDangNhap,Email,MatKhauHash,HoTen) VALUES(?,?,?,?)',[email,email,hashPassword(password),required(r.body.name,'họ tên')],c);await q('INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID,NguoiGanID) SELECT ?,VaiTroID,? FROM VaiTro WHERE MaVaiTro=?',[a.insertId,r.user.id,r.body.role],c);await audit(r.user,'TAO_TAI_KHOAN','TaiKhoan',a.insertId,r.body.role,c);return {id:a.insertId};});}));
-router.put('/admin/accounts/:id',admin,run(async r=>{const id=positive(r.params.id);if(id===r.user.id)fail('Không tự sửa vai trò hoặc khóa tài khoản đang dùng.');if(!['HOAT_DONG','BI_KHOA'].includes(r.body.status))fail('Trạng thái hoặc vai trò không hợp lệ.');await tx(async c=>{
- // Lock all active admin rows in a consistent order to protect the final administrator.
- const admins=await q("SELECT t.TaiKhoanID id FROM TaiKhoan t JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE v.MaVaiTro='SYSTEM_ADMIN' AND t.TrangThai='HOAT_DONG' ORDER BY t.TaiKhoanID FOR UPDATE",[],c);
- const [target]=await q('SELECT TaiKhoanID FROM TaiKhoan WHERE TaiKhoanID=? AND NgayXoa IS NULL FOR UPDATE',[id],c);
- if(!target)fail('Tài khoản không tồn tại.',404);
- const assigned=await q("SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=? FOR UPDATE",[id],c);
- if(!assigned.length)fail('Không tìm thấy tài khoản có vai trò.',404);
- const staffRoles=['SHOP_MANAGER','SYSTEM_ADMIN'];
- const currentRole=assigned.length===1?assigned[0].role:null;
- const requestedRole=r.body.role;
- const changingRole=requestedRole!==undefined && requestedRole!==currentRole;
- if(changingRole && !(staffRoles.includes(currentRole)&&staffRoles.includes(requestedRole)))fail('Chỉ được đổi vai trò giữa quản lý shop và nhân viên kỹ thuật.',403);
- if(admins.some(x=>x.id===id)&&admins.length===1&&(r.body.status!=='HOAT_DONG'||(changingRole&&requestedRole!=='SYSTEM_ADMIN')))fail('Không thể vô hiệu hóa quản trị viên cuối cùng.');
- await q('UPDATE TaiKhoan SET HoTen=?,TrangThai=?,NgayCapNhat=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[required(r.body.name,'họ tên'),r.body.status,id],c);
- if(changingRole){
-   await q('UPDATE TaiKhoanVaiTro SET VaiTroID=(SELECT VaiTroID FROM VaiTro WHERE MaVaiTro=?),NguoiGanID=?,NgayGan=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[requestedRole,r.user.id,id],c);
- }
- await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=?',[id],c);await audit(r.user,'SUA_PHAN_QUYEN','TaiKhoan',id,(requestedRole??assigned.map(x=>x.role).join(', '))+' / '+r.body.status,c);});return {ok:true};}));
-router.delete('/admin/accounts/:id',admin,run(async r=>{
- const id=positive(r.params.id);
- if(id===r.user.id)fail('Bạn không thể xóa tài khoản đang đăng nhập.',403);
- return tx(async c=>{
-   const [target]=await q('SELECT TrangThai FROM TaiKhoan WHERE TaiKhoanID=? AND NgayXoa IS NULL FOR UPDATE',[id],c);
-   if(!target)fail('Tài khoản không tồn tại.',404);
-   const roles=await q('SELECT v.MaVaiTro role FROM TaiKhoanVaiTro tv JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE tv.TaiKhoanID=? FOR UPDATE',[id],c);
-   if(!roles.length||roles.some(v=>!['CUSTOMER','SHOP_MANAGER'].includes(v.role)))fail('Chỉ được xóa tài khoản khách hàng hoặc quản lý shop.',403);
-   if(target.TrangThai!=='BI_KHOA')fail('Hãy khóa tài khoản trước khi xóa.',409);
-   // Preserve the ID and historical attribution while releasing the login identifiers.
-   const alias='deleted-'+randomUUID();
-   await q("UPDATE TaiKhoan SET NgayXoa=UTC_TIMESTAMP(),NgayCapNhat=UTC_TIMESTAMP(),TenDangNhap=?,Email=?,MatKhauHash=?,SoDienThoai=NULL,DiaChi=NULL,NgaySinh=NULL,GioiTinh=NULL,AnhDaiDien=NULL WHERE TaiKhoanID=?",[alias,alias,hashPassword(randomUUID()),id],c);
-   await q('UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=? AND ThuHoiLuc IS NULL',[id],c);
-   await q('UPDATE DatLaiMatKhau SET DaSuDungLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=? AND DaSuDungLuc IS NULL',[id],c);
-   await audit(r.user,'XOA_TAI_KHOAN','TaiKhoan',id,roles.map(v=>v.role).join(', '),c);
-   return {ok:true};
- });
-}));
-router.get('/admin/logs',admin,run(async()=>await q('SELECT n.NhatKyID id,t.HoTen name,n.HanhDong action,n.DoiTuong object,n.MaDoiTuong objectId,n.NoiDung content,n.KetQua result,n.ThoiDiem date FROM NhatKyHeThong n LEFT JOIN TaiKhoan t ON t.TaiKhoanID=n.NguoiThucHienID ORDER BY n.NhatKyID DESC LIMIT 200')));
-router.get('/admin/system',admin,run(async()=>({database:(await q('SELECT DATABASE() name,VERSION() version'))[0],tables:(await q('SELECT COUNT(*) n FROM information_schema.tables WHERE table_schema=DATABASE()'))[0].n,sessions:(await q('SELECT COUNT(*) n FROM PhienDangNhap WHERE ThuHoiLuc IS NULL AND HetHanLuc>UTC_TIMESTAMP()'))[0].n,accounts:(await q('SELECT COUNT(*) n FROM TaiKhoan WHERE NgayXoa IS NULL'))[0].n})));
-
-router.get('/manage/customers/:id/orders',manager,run(async r=>await q(ordersSql+' WHERE d.KhachHangID=? ORDER BY d.DonHangID DESC',[positive(r.params.id)])));
+// Các controller bên dưới áp dụng kiểm tra vai trò cho từng nghiệp vụ.
+authController.register(router, guards);
+catalogController.register(router, guards);
+promotionController.register(router, guards);
+checkoutController.register(router, guards);
+orderController.register(router, guards);
+returnController.register(router, guards);
+inventoryController.register(router, guards);
+reportController.register(router, guards);
+new UserController().register(router, admin, run);

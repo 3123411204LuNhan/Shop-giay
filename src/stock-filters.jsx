@@ -2,6 +2,7 @@ import React from 'react';
 
 export const emptyStockFilters={code:'',color:'',size:'',reserved:'',available:'',active:'',low:false};
 
+// Bộ lọc chạy trên danh sách biến thể do CatalogController trả về; số liệu tồn do InventoryService cập nhật qua phiếu kho.
 export function matchesStock(row,f,exactCode){
   const code=String(row.productCode).toLowerCase(), query=f.code.trim().toLowerCase();
   return (exactCode?code===query:code.includes(query))

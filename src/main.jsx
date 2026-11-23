@@ -19,6 +19,7 @@ const money=n=>new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND'}).
 const date=s=>s?new Date(s).toLocaleString('vi-VN',{dateStyle:'short',timeStyle:'short'}):'—';
 const statuses={GIAO_THAT_BAI:'Giao thất bại',CHO_HOAN_VE:'Chờ hàng hoàn về',DA_NHAN_HOAN:'Đã nhận hàng hoàn',CHUA_GIAO:'Chưa giao',HET_HAN:'Hết hạn',CHO_XAC_NHAN:'Chờ xác nhận',DA_XAC_NHAN:'Đã xác nhận',DANG_CHUAN_BI:'Đang chuẩn bị',DANG_GIAO:'Đang giao',DA_GIAO:'Đã giao',HOAN_THANH:'Hoàn thành',DA_HUY:'Đã hủy',DANG_BAN:'Đang bán',NHAP:'Bản nháp',AN:'Đã ẩn',NGUNG_BAN:'Ngừng bán',DANG_AP_DUNG:'Đang áp dụng',KET_THUC:'Đã kết thúc',HOAT_DONG:'Hoạt động',BI_KHOA:'Bị khóa',CHO_DUYET:'Chờ duyệt',DA_DUYET:'Đã duyệt',TU_CHOI:'Từ chối',DANG_XU_LY:'Đang xử lý',HOAN_TAT:'Hoàn tất',CHO_XU_LY:'Chờ xử lý',THAT_BAI:'Thất bại'};
 const roles={CUSTOMER:'Khách hàng',SHOP_MANAGER:'Chủ shop',SYSTEM_ADMIN:'Nhân viên kỹ thuật'};
+// Các component React gọi api để gửi yêu cầu tới controller của từng khu vực. Máy chủ kiểm tra lại phiên và vai trò.
 async function api(path,body,method=body?'POST':'GET',area=areaForPath(location.pathname)){
  const publicAuth=['/me','/auth/login','/auth/register','/auth/forgot','/auth/verify-otp','/auth/reset'].includes(path);
  const account=publicAuth?null:sessionAccounts[area];
@@ -251,6 +252,7 @@ function Workspace({user,ready,page,navigate,logout,login,notify,perform,busy,..
      perform(async()=>{await api('/admin/accounts/'+u.id,undefined,'DELETE');await load();},'Đã xóa tài khoản.');
    }
  };
+ // Form gọi API tài khoản của UserController. UserService kiểm tra quyền gán vai trò trước khi UserRepository ghi MySQL.
  const userForm=u=>{
    const staff=['SHOP_MANAGER','SYSTEM_ADMIN'];
    const choices=u?staff:['CUSTOMER','SHOP_MANAGER'];
