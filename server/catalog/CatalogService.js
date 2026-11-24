@@ -5,6 +5,30 @@ import { tx, fail, positive, text } from '../db.js';
 import { audit } from '../auth.js';
 const repository = new CatalogRepository();
 
+async function variantWrite(write) {
+  try {
+    return await write();
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      const key = /for key '([^']+)'/.exec(error.sqlMessage ?? '')?.[1].split('.').at(-1);
+      if (key === 'SKU') fail('SKU đã tồn tại.', 409);
+      if (key === 'SanPhamID') fail('Sản phẩm đã có biến thể với size và màu này.', 409);
+    }
+    throw error;
+  }
+}
+
+async function productWrite(write) {
+  try {
+    return await write();
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY' && /for key '[^']*\bMaSanPham'/.test(error.sqlMessage ?? '')) {
+      fail('Mã sản phẩm đã tồn tại.', 409);
+    }
+    throw error;
+  }
+}
+
 function productStatus(value) {
   if (value === 'NHAP') return 'AN'; // Accept forms from before drafts were merged with hidden products.
   if (!['AN', 'DANG_BAN', 'NGUNG_BAN'].includes(value)) fail('Trạng thái sản phẩm không hợp lệ.');
@@ -147,7 +171,8 @@ export class CatalogService {
   }
 
   async createProduct(r) {
-    return await tx(async (c) => {
+    return productWrite(() => tx(async (c) => {
+      const image = productImage(r.body.image);
       const a = await repository.insertProduct(
         [
           required(r.body.code, 'mã sản phẩm'),
@@ -161,14 +186,15 @@ export class CatalogService {
         ],
         c,
       );
-      if (r.body.image) await repository.insertImage([a.insertId, text(r.body.image, 1000)], c);
+      if (image) await repository.insertImage([a.insertId, image], c);
       await audit(r.user, 'TAO_SAN_PHAM', 'SanPham', a.insertId, r.body.name, c);
       return { id: a.insertId };
-    });
+    }));
   }
 
+  // Sequence 3.1: đọc bản ghi hiện tại, kiểm tra dữ liệu, lưu thông tin và cập nhật trạng thái trong một giao dịch.
   async updateProduct(r) {
-    return tx(async (c) => {
+    return productWrite(() => tx(async (c) => {
       const id = positive(r.params.id),
         body = r.body;
       const [p] = await repository.lockProduct([id], c);
@@ -179,8 +205,6 @@ export class CatalogService {
       const changed = ['code', 'name', 'description', 'price', 'categoryId', 'brandId', 'image'].some(
         (key) => key in body && String(body[key] ?? '') !== String(p[key] ?? ''),
       );
-      if (changed && p.status !== 'AN')
-        fail('Hãy lưu trạng thái Ẩn trước khi chỉnh sửa thông tin hoặc ảnh sản phẩm.', 409);
       if (changed) {
         const data = { ...p, ...body };
         await repository.updateProduct(
@@ -209,15 +233,17 @@ export class CatalogService {
       await repository.setProductStatus([status, id], c);
       await audit(r.user, 'SUA_SAN_PHAM', 'SanPham', id, body.name ?? p.name, c);
       return { ok: true };
-    });
+    }));
   }
 
-  async listVariants() {
-    return await repository.variants();
+  // Sequence 3.2: CatalogController nhận sản phẩm đã chọn và truy vấn đúng các biến thể qua repository.
+  async listVariants(r) {
+    const { productId } = r.query;
+    return repository.variants(productId == null ? undefined : positive(productId));
   }
 
   async createVariant(r) {
-    return await tx(async (c) => {
+    return variantWrite(() => tx(async (c) => {
       const a = await repository.insertVariant(
         [
           positive(r.body.productId),
@@ -231,13 +257,14 @@ export class CatalogService {
       await repository.createStock([a.insertId], c);
       await audit(r.user, 'TAO_BIEN_THE', 'BienTheSanPham', a.insertId, r.body.sku, c);
       return { id: a.insertId };
-    });
+    }));
   }
 
   async updateVariant(r) {
-    await tx(async (c) => {
+    await variantWrite(() => tx(async (c) => {
       const [old] = await repository.lockVariant([positive(r.params.id)], c);
-      if (!old) fail('Không có biến thể.');
+      if (!old) fail('Không tìm thấy biến thể.', 404);
+      const active = Number(r.body.active);
       if (![0, 1].includes(Number(r.body.active)) || r.body.active == null)
         fail('Trạng thái không hợp lệ.');
       if (old.DangKinhDoanh && ['sizeId', 'colorId', 'price', 'sku'].some((key) => key in r.body))
@@ -256,9 +283,9 @@ export class CatalogService {
           c,
         );
       }
-      await repository.setVariantStatus([r.body.active ? 1 : 0, old.BienTheID], c);
-      await audit(r.user, 'AN_HIEN_BIEN_THE', 'BienTheSanPham', r.params.id, String(!!r.body.active), c);
-    });
+      await repository.setVariantStatus([active, old.BienTheID], c);
+      await audit(r.user, 'AN_HIEN_BIEN_THE', 'BienTheSanPham', r.params.id, String(Boolean(active)), c);
+    }));
     return { ok: true };
   }
 

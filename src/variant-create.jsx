@@ -1,8 +1,8 @@
 import React,{useState} from 'react';
 
 // Form gửi size, màu và SKU tới CatalogController. CatalogService kiểm tra dữ liệu và ghi thông qua CatalogRepository.
-export function VariantCreate({products,lookups,setLookups,api,perform,busy,onSave}){
-  const [values,setValues]=useState({productId:'',sku:'',sizeId:'',colorId:'',price:''});
+export function VariantCreate({productId,products,lookups,setLookups,api,perform,busy,onSave}){
+  const [values,setValues]=useState({productId,sku:'',sizeId:'',colorId:'',price:''});
   const [adding,setAdding]=useState(null);
   const set=(key,value)=>setValues(old=>({...old,[key]:value}));
   const options=items=>items.map(x=><option key={x.id} value={x.id}>{x.name}</option>);

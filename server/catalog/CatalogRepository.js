@@ -196,9 +196,10 @@ export class CatalogRepository {
     );
   }
 
-  variants() {
+  variants(productId) {
     return query(
-      `SELECT b.BienTheID id,b.SanPhamID productId,b.KichCoID sizeId,b.MauSacID colorId,b.GiaBanRieng price,b.SKU sku,s.MaSanPham productCode,s.TenSanPham name,kc.GiaTri size,m.TenMau color,b.DangKinhDoanh active,k.SoLuongTon stock,k.SoLuongDaPhanBo reserved,k.SoLuongKhaDung available,k.MucCanhBao warning FROM BienTheSanPham b JOIN SanPham s ON s.SanPhamID=b.SanPhamID JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID JOIN TonKho k ON k.BienTheID=b.BienTheID ORDER BY s.SanPhamID,b.BienTheID`,
+      `SELECT b.BienTheID id,b.SanPhamID productId,b.KichCoID sizeId,b.MauSacID colorId,b.GiaBanRieng price,b.SKU sku,s.MaSanPham productCode,s.TenSanPham name,kc.GiaTri size,m.TenMau color,b.DangKinhDoanh active,k.SoLuongTon stock,k.SoLuongDaPhanBo reserved,k.SoLuongKhaDung available,k.MucCanhBao warning FROM BienTheSanPham b JOIN SanPham s ON s.SanPhamID=b.SanPhamID JOIN KichCo kc ON kc.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID JOIN TonKho k ON k.BienTheID=b.BienTheID ${productId == null ? '' : 'WHERE b.SanPhamID=?'} ORDER BY s.SanPhamID,b.BienTheID`,
+      productId == null ? [] : [productId],
     );
   }
 

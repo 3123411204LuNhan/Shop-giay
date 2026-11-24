@@ -1,11 +1,10 @@
 import React from 'react';
 
-export const emptyStockFilters={code:'',color:'',size:'',reserved:'',available:'',active:'',low:false};
+export const emptyStockFilters={productId:'',color:'',size:'',reserved:'',available:'',active:'',low:false};
 
 // Bộ lọc chạy trên danh sách biến thể do CatalogController trả về; số liệu tồn do InventoryService cập nhật qua phiếu kho.
-export function matchesStock(row,f,exactCode){
-  const code=String(row.productCode).toLowerCase(), query=f.code.trim().toLowerCase();
-  return (exactCode?code===query:code.includes(query))
+export function matchesStock(row,f){
+  return String(row.productId)===f.productId
     && (!f.color||String(row.colorId)===f.color)
     && (!f.size||String(row.sizeId)===f.size)
     && (!f.reserved||String(Number(row.reserved)>0)===f.reserved)
@@ -23,8 +22,9 @@ export function StockFilters({filters,change,products,lookups,reset}){
     ['active','Trạng thái',[{id:'1',name:'Đang bán'},{id:'0',name:'Ẩn'}]]
   ];
   return <div className="stock-filters">
-    <label>Mã sản phẩm<input list="stock-product-codes" value={filters.code} placeholder="Nhập mã sản phẩm…" onChange={e=>update('code',e.target.value)}/>
-      <datalist id="stock-product-codes">{products.map(p=><option key={p.id} value={p.code}>{p.name}</option>)}</datalist></label>
+    <label>Sản phẩm<select value={filters.productId} onChange={e=>update('productId',e.target.value)}>
+      <option value="">Chọn sản phẩm để xem biến thể</option>{products.map(p=><option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+    </select></label>
     {selectors.map(([key,title,options])=><label key={key}>{title}<select value={filters[key]} onChange={e=>update(key,e.target.value)}>
       <option value="">Tất cả</option>{options.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
     </select></label>)}

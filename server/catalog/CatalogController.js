@@ -51,7 +51,7 @@ export class CatalogController {
     router.get(
       '/manage/variants',
       manager,
-      run(() => this.service.listVariants()),
+      run((r) => this.service.listVariants(r)),
     );
     router.post(
       '/manage/variants',
