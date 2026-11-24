@@ -29,7 +29,7 @@ export class ReturnRepository {
 
   findByKey(values, connection) {
     return query(
-      'SELECT YeuCauDoiTraID id,KhachHangID owner FROM YeuCauDoiTra WHERE MaChongLap=?',
+      'SELECT YeuCauDoiTraID id,KhachHangID owner,MaYeuCau code,TrangThai status FROM YeuCauDoiTra WHERE MaChongLap=?',
       values,
       connection,
     );
@@ -41,6 +41,25 @@ export class ReturnRepository {
       values,
       connection,
     );
+  }
+
+  exchangeOptions(originalId,price,targetId,connection) {
+    return query(
+      `SELECT b.BienTheID id,b.SKU sku,k.GiaTri size,m.TenMau color,t.SoLuongKhaDung stock
+        FROM BienTheSanPham old JOIN BienTheSanPham b ON b.SanPhamID=old.SanPhamID
+        JOIN SanPham s ON s.SanPhamID=b.SanPhamID JOIN TonKho t ON t.BienTheID=b.BienTheID
+        JOIN DanhMuc d ON d.DanhMucID=s.DanhMucID JOIN ThuongHieu h ON h.ThuongHieuID=s.ThuongHieuID
+        JOIN KichCo k ON k.KichCoID=b.KichCoID JOIN MauSac m ON m.MauSacID=b.MauSacID
+        WHERE old.BienTheID=? AND b.BienTheID<>old.BienTheID AND b.DangKinhDoanh=1
+        AND s.TrangThai='DANG_BAN' AND d.DangHoatDong=1 AND h.DangHoatDong=1
+        AND COALESCE(b.GiaBanRieng,s.GiaBan)=?
+        ${targetId==null?'AND t.SoLuongKhaDung>0 ORDER BY k.ThuTu,b.BienTheID':'AND b.BienTheID=? FOR UPDATE'}`,
+      targetId==null?[originalId,price]:[originalId,price,targetId],connection,
+    );
+  }
+
+  linkReplacement(values,connection) {
+    return query('UPDATE YeuCauDoiTra SET DonHangDoiMoiID=? WHERE YeuCauDoiTraID=?',values,connection);
   }
 
   requestedQuantity(values, connection) {
@@ -61,7 +80,7 @@ export class ReturnRepository {
 
   addLine(values, connection) {
     return query(
-      'INSERT INTO ChiTietDoiTra(YeuCauDoiTraID,DonHangID,ChiTietDonHangID,SoLuongYeuCau) VALUES(?,?,?,?)',
+      'INSERT INTO ChiTietDoiTra(YeuCauDoiTraID,DonHangID,ChiTietDonHangID,SoLuongYeuCau,BienTheDoiSangID) VALUES(?,?,?,?,?)',
       values,
       connection,
     );
@@ -79,18 +98,41 @@ export class ReturnRepository {
     );
   }
 
-  ownedRequest(values) {
+  requestDetails(id, customerId) {
     return query(
-      'SELECT YeuCauDoiTraID id,MaYeuCau code,TrangThai status,LyDo reason,LyDoXuLy decision,DonHangID orderId FROM YeuCauDoiTra WHERE YeuCauDoiTraID=? AND KhachHangID=?',
-      values,
+      `SELECT y.YeuCauDoiTraID id,y.MaYeuCau code,y.LoaiYeuCau type,y.TrangThai status,y.LyDo reason,
+        y.LyDoXuLy decision,d.DonHangID orderId,d.MaDonHang orderCode,d2.MaDonHang replacementCode,
+        a.HoTen customerName
+        FROM YeuCauDoiTra y JOIN DonHang d ON d.DonHangID=y.DonHangID
+        JOIN TaiKhoan a ON a.TaiKhoanID=y.KhachHangID
+        LEFT JOIN DonHang d2 ON d2.DonHangID=y.DonHangDoiMoiID
+        WHERE y.YeuCauDoiTraID=?${customerId==null?'':' AND y.KhachHangID=?'}`,
+      customerId==null?[id]:[id,customerId],
     );
   }
 
   lines(values) {
     return query(
-      'SELECT ct.TenSanPhamLucMua name,c.SoLuongYeuCau quantity,c.SoLuongDuyet approved,c.SoLuongDaNhan received,c.SoLuongBanLai sellable,c.TienHoanDuocDuyet refund FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=?',
+      `SELECT c.ChiTietDoiTraID id,ct.TenSanPhamLucMua name,ct.KichCoLucMua size,ct.MauSacLucMua color,
+        c.SoLuongYeuCau quantity,c.SoLuongDuyet approved,c.SoLuongDaNhan received,c.SoLuongBanLai sellable,
+        c.TienHoanDuocDuyet refund,ks.GiaTri targetSize,ms.TenMau targetColor,k.SoLuongKhaDung targetStock
+        FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID
+        LEFT JOIN BienTheSanPham b ON b.BienTheID=c.BienTheDoiSangID
+        LEFT JOIN KichCo ks ON ks.KichCoID=b.KichCoID LEFT JOIN MauSac ms ON ms.MauSacID=b.MauSacID
+        LEFT JOIN TonKho k ON k.BienTheID=b.BienTheID WHERE c.YeuCauDoiTraID=?`,
       values,
     );
+  }
+
+  requestImage(id,url,owner) {
+    return query(
+      'SELECT 1 FROM HinhAnhDoiTra h JOIN YeuCauDoiTra y ON y.YeuCauDoiTraID=h.YeuCauDoiTraID WHERE y.YeuCauDoiTraID=? AND h.DuongDan=?'+(owner==null?'':' AND y.KhachHangID=?'),
+      owner==null?[id,url]:[id,url,owner],
+    );
+  }
+
+  images(values) {
+    return query('SELECT DuongDan url FROM HinhAnhDoiTra WHERE YeuCauDoiTraID=? ORDER BY HinhAnhID',values);
   }
 
   history(values) {
@@ -119,10 +161,17 @@ export class ReturnRepository {
 
   lockLines(values, connection) {
     return query(
-      'SELECT c.*,ct.BienTheID,ct.SoLuong bought,ct.ThanhTien paid FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=? FOR UPDATE',
+      'SELECT c.*,ct.BienTheID,ct.MaSanPhamLucMua,ct.TenSanPhamLucMua,ct.DanhMucLucMua,ct.ThuongHieuLucMua,ct.DonGia,ct.SoLuong bought,ct.ThanhTien paid FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=? FOR UPDATE',
       values,
       connection,
     );
+  }
+
+  approvedReturnShares(values,connection) {
+    return query(`SELECT COALESCE(SUM(c.SoLuongDuyet),0) quantity,COALESCE(SUM(c.TienHoanDuocDuyet),0) amount
+      FROM ChiTietDoiTra c JOIN YeuCauDoiTra y ON y.YeuCauDoiTraID=c.YeuCauDoiTraID
+      WHERE c.ChiTietDonHangID=? AND c.YeuCauDoiTraID<>?
+      AND y.LoaiYeuCau='TRA' AND y.TrangThai NOT IN ('DA_HUY','TU_CHOI')`,values,connection);
   }
 
   approveLine(values, connection) {
@@ -151,7 +200,7 @@ export class ReturnRepository {
 
   createReceipt(values, connection) {
     return query(
-      "INSERT INTO PhieuKho(MaPhieu,MaChongLap,LoaiPhieu,LyDo,NguoiThucHienID) VALUES(?,?,'NHAN_TRA',?,?)",
+      "INSERT INTO PhieuKho(MaPhieu,MaChongLap,LoaiPhieu,LyDo,NguoiThucHienID,TrangThai,NgayXacNhan,NguoiXacNhanID) VALUES(?,?,'NHAN_TRA',?,?,'DA_XAC_NHAN',UTC_TIMESTAMP(),?)",
       values,
       connection,
     );

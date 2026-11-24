@@ -1,3 +1,4 @@
+import { imageForm, sendUploadedImage } from '../image-upload.js';
 import { CatalogService } from './CatalogService.js';
 
 // Ánh xạ API sản phẩm, màu, size, biến thể, danh mục và thương hiệu tới CatalogService.
@@ -7,6 +8,7 @@ export class CatalogController {
   }
 
   registerPublic(router, { run }) {
+    router.get('/product-images/:name',(req,res,next)=>sendUploadedImage('products',req.params.name,res,next));
     router.get(
       '/catalog',
       run((r) => this.service.browse(r)),
@@ -41,11 +43,13 @@ export class CatalogController {
     router.post(
       '/manage/products',
       manager,
+      imageForm,
       run((r) => this.service.createProduct(r)),
     );
     router.put(
       '/manage/products/:id',
       manager,
+      imageForm,
       run((r) => this.service.updateProduct(r)),
     );
     router.get(

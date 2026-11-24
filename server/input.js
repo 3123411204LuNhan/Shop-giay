@@ -21,7 +21,13 @@ export const code = (prefix) =>
 // CatalogService và ReturnService dùng chung kiểm tra đường dẫn ảnh.
 export function productImage(value) {
   const url = String(value ?? '').trim();
-  if (url && (url.length > 1000 || !/^(https?:\/\/[^\s/]+|\/images\/[^\s]+)/i.test(url)))
-    fail('Nhập URL ảnh HTTP(S) hoặc đường dẫn /images/ của cửa hàng.');
-  return url;
+  if (!url) return '';
+  if (url.length<=1000 && !/\s/.test(url)) {
+    if (/^\/images\/[^?#\\]+$/.test(url) && !url.split('/').includes('..')) return url;
+    if (/^https?:\/\//i.test(url)) {
+      const parsed=URL.parse(url);
+      if (parsed?.hostname && !parsed.username && !parsed.password) return url;
+    }
+  }
+  fail('Nhập URL ảnh HTTP(S) hoặc đường dẫn /images/ của cửa hàng.');
 }

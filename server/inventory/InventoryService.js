@@ -9,6 +9,11 @@ const repository = new InventoryRepository();
 
 // InventoryController chuyển yêu cầu tới các phương thức xử lý phiếu kho, ngưỡng cảnh báo và lịch sử tồn.
 export class InventoryService {
+  async stock(r) {
+    const {productId}=r.query;
+    return repository.stock(productId==null?undefined:positive(productId));
+  }
+
   async rejectDirectAdjustment() {
     return fail('Vui lòng lập phiếu kho nháp rồi xác nhận tại mục Phiếu kho.', 409);
   }
@@ -55,7 +60,11 @@ export class InventoryService {
       if (p.TrangThai !== 'NHAP') fail('Phiếu đã hủy không thể xác nhận.');
       const lines = await repository.lockLines([p.PhieuKhoID], c);
       if (!lines.length) fail('Phiếu không có dòng hàng.');
-      for (const line of lines)
+      for (const line of lines) {
+        if(line.TonSoSach!=null){
+          const [stock]=await repository.lockStock([line.BienTheID],c);
+          if(stock?.stock!==line.TonSoSach)fail('Tồn sổ đã thay đổi. Hãy kiểm đếm và lưu lại phiếu nháp.',409);
+        }
         await stockLog(
           c,
           r.user,
@@ -67,6 +76,7 @@ export class InventoryService {
           line.ChiTietPhieuKhoID,
           p.LyDo,
         );
+      }
       await repository.confirmReceipt([r.user.id, p.PhieuKhoID], c);
       await audit(r.user, 'XAC_NHAN_PHIEU_KHO', 'PhieuKho', p.PhieuKhoID, p.LyDo, c);
       return { ok: true };

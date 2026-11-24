@@ -35,11 +35,26 @@ async function receiptLines(c,body) {
   const lines=body.items.map(item=>{
     const variantId=positive(item.variantId),quantity=Number(item.quantity),cost=item.cost===''||item.cost==null?null:Number(item.cost);
     if(seen.has(variantId))fail('Biến thể bị lặp trong phiếu.');seen.add(variantId);
-    if(!Number.isSafeInteger(quantity)||quantity===0||Math.abs(quantity)>100000||(body.type==='NHAP'&&quantity<0))fail('Số lượng nhập hoặc chênh lệch không hợp lệ.');
+    const counted=body.type==='DIEU_CHINH'&&item.counted!=null?Number(item.counted):null;
+    if(counted!=null&&(!/^\d+$/.test(String(item.counted).trim())||!Number.isSafeInteger(counted)||counted<0||counted>100000))
+      fail('Số lượng kiểm đếm phải là số nguyên từ 0 đến 100000.');
+    if(counted==null&&(!Number.isSafeInteger(quantity)||quantity===0||Math.abs(quantity)>100000||(body.type==='NHAP'&&quantity<0)))fail('Số lượng nhập hoặc chênh lệch không hợp lệ.');
     if(cost!==null&&(!Number.isFinite(cost)||cost<0||cost>1e10))fail('Giá nhập không hợp lệ.');
-    return {variantId,quantity,cost};
+    return {variantId,quantity,cost,counted,expected:item.baseline};
   }).sort((a,b)=>a.variantId-b.variantId);
-  for(const line of lines){const [v]=await q('SELECT BienTheID FROM BienTheSanPham WHERE BienTheID=?',[line.variantId],c);if(!v)fail('Biến thể không tồn tại.');}
+  for(const line of lines){
+    const [variant]=await q('SELECT BienTheID FROM BienTheSanPham WHERE BienTheID=?',[line.variantId],c);
+    if(!variant)fail('Biến thể không tồn tại.',404);
+    if(line.counted==null)continue;
+    // Mục 3.5: tính chênh lệch từ tồn sổ thực tế và giữ mốc đó tới lúc xác nhận.
+    const [stock]=await q('SELECT SoLuongTon stock,SoLuongDaPhanBo reserved FROM TonKho WHERE BienTheID=? FOR UPDATE',[line.variantId],c);
+    if(!stock)fail('Không tìm thấy tồn kho.',404);
+    if(line.expected!=null&&Number(line.expected)!==stock.stock)fail('Tồn sổ đã thay đổi. Hãy tải lại và kiểm đếm lại.',409);
+    if(line.counted<stock.reserved)fail('Số kiểm đếm thấp hơn lượng đang giữ.');
+    line.baseline=stock.stock;
+    line.quantity=line.counted-stock.stock;
+    if(!line.quantity)fail('Số kiểm đếm bằng tồn sổ. Bỏ dòng không có chênh lệch.');
+  }
   return lines;
 }
 
@@ -50,7 +65,7 @@ async function saveReceipt(c,user,body,id) {
   const lines=await receiptLines(c,body);
   if(id){await q('UPDATE PhieuKho SET LoaiPhieu=?,MaChungTuThamChieu=?,LyDo=?,NhaCungCap=? WHERE PhieuKhoID=?',[body.type,reference,reason,text(body.supplier,200)||null,id],c);await q('DELETE FROM ChiTietPhieuKho WHERE PhieuKhoID=?',[id],c);}
   else {const result=await q("INSERT INTO PhieuKho(MaPhieu,MaChongLap,LoaiPhieu,MaChungTuThamChieu,LyDo,NguoiThucHienID,TrangThai,NhaCungCap) VALUES(?,?,?,?,?,?,'NHAP',?)",[code('PK'),requestKey(body.requestId),body.type,reference,reason,user.id,text(body.supplier,200)||null],c);id=result.insertId;}
-  for(const line of lines)await q('INSERT INTO ChiTietPhieuKho(PhieuKhoID,BienTheID,SoLuongThayDoi,DonGiaNhap) VALUES(?,?,?,?)',[id,line.variantId,line.quantity,line.cost],c);
+  for(const line of lines)await q('INSERT INTO ChiTietPhieuKho(PhieuKhoID,BienTheID,SoLuongThayDoi,DonGiaNhap,TonSoSach) VALUES(?,?,?,?,?)',[id,line.variantId,line.quantity,line.cost,line.baseline??null],c);
   await audit(user,'LUU_NHAP_KHO','PhieuKho',id,reason,c);return {id};
 }
 

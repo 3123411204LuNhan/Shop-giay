@@ -9,6 +9,7 @@ export const workflowColumns = {
     DonViVanChuyen: 'varchar(150) NULL', MaVanDon: 'varchar(100) NULL',
     TrangThaiGiaoHang: "varchar(20) NOT NULL DEFAULT 'CHUA_GIAO'",
   },
+  ChiTietPhieuKho: { TonSoSach: 'int NULL' },
   PhieuKho: {
     TrangThai: "varchar(20) NOT NULL DEFAULT 'DA_XAC_NHAN'",
     NhaCungCap: 'varchar(200) NULL', NgayXacNhan: 'datetime NULL',

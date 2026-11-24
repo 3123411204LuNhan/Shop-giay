@@ -1,4 +1,5 @@
 import { productImage, required, price } from '../input.js';
+import { removeProductUpload, withImageUpload } from '../image-upload.js';
 import { CatalogRepository } from './CatalogRepository.js';
 
 import { tx, fail, positive, text } from '../db.js';
@@ -43,7 +44,8 @@ function taxonomyState(body, defaultActive) {
 }
 async function deleteCatalogDraft(r, table, col) {
   const id = positive(r.params.id);
-  return tx(async (c) => {
+  let images=[];
+  const result=await tx(async (c) => {
     const product = table === 'SanPham';
     const flag = product ? "TrangThai='AN'" : 'DangHoatDong=0';
     const [item] = await repository.lockHiddenItem(flag, table, col, [id], c);
@@ -55,6 +57,7 @@ async function deleteCatalogDraft(r, table, col) {
         const stocks = await repository.productStock([id], c);
         if (stocks.some((k) => k.SoLuongTon || k.SoLuongDaPhanBo))
           fail('Sản phẩm còn tồn kho hoặc đang giữ hàng.', 409);
+        images=await repository.productImages([id],c);
         await repository.deleteImages([id], c);
         await repository.deleteStock([id], c);
         await repository.deleteVariants([id], c);
@@ -75,6 +78,8 @@ async function deleteCatalogDraft(r, table, col) {
     );
     return { ok: true };
   });
+  await Promise.all(images.map(({url})=>removeProductUpload(url)));
+  return result;
 }
 
 // CatalogController chuyển yêu cầu tới các phương thức xử lý sản phẩm, màu, size, biến thể, danh mục và thương hiệu.
@@ -171,8 +176,8 @@ export class CatalogService {
   }
 
   async createProduct(r) {
-    return productWrite(() => tx(async (c) => {
-      const image = productImage(r.body.image);
+    return withImageUpload(r.imageFile,'products',save => productWrite(() => tx(async (c) => {
+      let image = productImage(r.body.image);
       const a = await repository.insertProduct(
         [
           required(r.body.code, 'mã sản phẩm'),
@@ -186,23 +191,27 @@ export class CatalogService {
         ],
         c,
       );
+      if (r.imageFile) image='/api/product-images/'+await save();
       if (image) await repository.insertImage([a.insertId, image], c);
       await audit(r.user, 'TAO_SAN_PHAM', 'SanPham', a.insertId, r.body.name, c);
       return { id: a.insertId };
-    }));
+    })));
   }
 
   // Sequence 3.1: đọc bản ghi hiện tại, kiểm tra dữ liệu, lưu thông tin và cập nhật trạng thái trong một giao dịch.
   async updateProduct(r) {
-    return productWrite(() => tx(async (c) => {
+    let replaced;
+    const result=await withImageUpload(r.imageFile,'products',save => productWrite(() => tx(async (c) => {
       const id = positive(r.params.id),
-        body = r.body;
+        body = {...r.body};
       const [p] = await repository.lockProduct([id], c);
       if (!p) fail('Không tìm thấy sản phẩm.', 404);
       const status = productStatus(body.status ?? p.status);
       const [photo] = await repository.lockImage([id], c);
       p.image = photo?.image ?? '';
-      const changed = ['code', 'name', 'description', 'price', 'categoryId', 'brandId', 'image'].some(
+      const upload=Boolean(r.imageFile);
+      if (body.removeImage===true || body.removeImage==='true') body.image='';
+      const changed = upload || ['code', 'name', 'description', 'price', 'categoryId', 'brandId', 'image'].some(
         (key) => key in body && String(body[key] ?? '') !== String(p[key] ?? ''),
       );
       if (changed) {
@@ -219,9 +228,10 @@ export class CatalogService {
           ],
           c,
         );
-        if ('image' in body && body.image !== p.image) {
-          const image = productImage(body.image);
+        if (upload || ('image' in body && body.image !== p.image)) {
+          const image = upload?'/api/product-images/'+await save():productImage(body.image);
           if (photo && photo.variant == null) {
+            replaced=photo.image;
             if (image) await repository.updateImage([image, photo.id], c);
             else await repository.removeImage([photo.id], c);
           } else if (image) {
@@ -233,7 +243,9 @@ export class CatalogService {
       await repository.setProductStatus([status, id], c);
       await audit(r.user, 'SUA_SAN_PHAM', 'SanPham', id, body.name ?? p.name, c);
       return { ok: true };
-    }));
+    })));
+    await removeProductUpload(replaced);
+    return result;
   }
 
   // Sequence 3.2: CatalogController nhận sản phẩm đã chọn và truy vấn đúng các biến thể qua repository.

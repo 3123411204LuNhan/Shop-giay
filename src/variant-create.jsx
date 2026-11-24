@@ -1,5 +1,28 @@
 import React,{useState} from 'react';
 
+export function VariantWorkspace({rows,products,productId,chooseProduct,lookups,DataTable,hide,edit,remove}){
+  const [filters,setFilters]=useState({sizeId:'',colorId:'',active:''});
+  const visible=rows.filter(r=>Object.entries(filters).every(([key,value])=>!value||String(r[key])===value));
+  return <>
+    <div className="stock-filters"><label>Sản phẩm<select value={productId} onChange={e=>chooseProduct(e.target.value)}>
+      <option value="">Chọn sản phẩm để xem biến thể</option>
+      {products.map(p=><option key={p.id} value={p.id}>{p.code} · {p.name}</option>)}
+    </select></label>
+      {productId&&[['sizeId','Size',lookups.sizes],['colorId','Màu',lookups.colors],['active','Kinh doanh',[{id:1,name:'Đang bán'},{id:0,name:'Đã ẩn'}]]].map(([key,label,options])=><label key={key}>{label}<select value={filters[key]} onChange={e=>setFilters({...filters,[key]:e.target.value})}>
+        <option value="">Tất cả</option>
+        {options.map(option=><option key={option.id} value={option.id}>{option.name}</option>)}
+      </select></label>)}
+    </div>
+    {productId&&<DataTable rows={visible} columns={[['sku','SKU'],['size','EU'],['color','Màu'],
+      ['price','Giá riêng (VND)',v=>v==null?'Theo giá sản phẩm':Number(v).toLocaleString('vi-VN')],
+      ['active','Kinh doanh',v=>v?'Đang bán':'Đã ẩn']]}
+      actions={r=>r.active?<button className="small-button" onClick={()=>hide(r)}>Ẩn</button>:<>
+        <button className="small-button" onClick={()=>edit(r)}>Sửa</button>
+        <button className="small-button" onClick={()=>remove(r)}>Xóa</button>
+      </>}/>}
+  </>;
+}
+
 // Form gửi size, màu và SKU tới CatalogController. CatalogService kiểm tra dữ liệu và ghi thông qua CatalogRepository.
 export function VariantCreate({productId,products,lookups,setLookups,api,perform,busy,onSave}){
   const [values,setValues]=useState({productId,sku:'',sizeId:'',colorId:'',price:''});

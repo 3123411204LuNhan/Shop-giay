@@ -131,7 +131,12 @@ test('MySQL + Node.js: phân quyền, mua hàng, kho, hoàn tiền và quản tr
     await manager.ok(endpoint,{active:'0'},'PUT');
     const [hidden]=await scoped(a.id);
     assert.equal(hidden.active,0);
-    assert.equal(hidden.stock,0);
+    assert.equal('stock' in hidden,false);
+    const [inventory]=await manager.ok('/manage/stock?productId='+a.id);
+    assert.equal(inventory.id,added.id);
+    assert.equal(inventory.stock,0);
+    assert.equal('price' in inventory,false);
+    assert.equal((await customer.call('/manage/stock')).status,403);
     assert.equal((await customer.ok('/products/'+a.id)).variants.length,0);
     await manager.ok(endpoint,undefined,'DELETE');
     assert.equal((await manager.call(endpoint,{active:0},'PUT')).status,404);

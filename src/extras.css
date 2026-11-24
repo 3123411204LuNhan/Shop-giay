@@ -59,3 +59,14 @@
 .form .login-password input { margin-top: 0; padding-right: 46px; }
 .login-password input::-ms-reveal { display: none; }
 .login-password button { position: absolute; inset: 0 1px 0 auto; width: 42px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--ink); cursor: pointer; }
+.stock-heading{align-items:flex-start;flex-wrap:wrap}
+.stock-heading-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-left:auto}
+.stock-heading-actions .button{min-height:37px;padding:8px 13px;font-size:11px;white-space:nowrap}
+.report-form { padding: 20px; margin-bottom: 18px; }
+.report-criteria { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); align-items: end; gap: 14px; padding: 0; margin: 0; border: 0; min-width: 0; }
+.report-criteria .button { min-height: 42px; }
+.report-section { padding: 18px 20px; border-top: 1px solid #edf0eb; }
+.report-section > p { margin: 6px 0 12px; }
+.report-totals { display: flex; flex-wrap: wrap; gap: 12px 28px; margin: 12px 0 18px; }
+.report-totals dt { font-size: .85rem; }
+.report-totals dd { margin: 5px 0 0; font-weight: 700; }

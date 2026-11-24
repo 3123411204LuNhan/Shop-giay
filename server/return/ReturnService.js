@@ -1,11 +1,65 @@
+import { withImageUpload } from '../image-upload.js';
 import { productImage, required, code } from '../input.js';
 import { ReturnRepository } from './ReturnRepository.js';
+import { CheckoutRepository } from '../checkout/CheckoutRepository.js';
+import { OrderRepository } from '../order/OrderRepository.js';
 import { randomUUID } from 'node:crypto';
 import { tx, fail, positive, text } from '../db.js';
 import { audit } from '../auth.js';
 import { storeConfig } from '../store-config.js';
 import { stockLog, prepareReturnRefunds } from '../operations.js';
 const repository = new ReturnRepository();
+const orders = new OrderRepository();
+const checkout = new CheckoutRepository();
+
+async function eligibleLine(itemId,customerId,connection) {
+  const [line]=await repository.lockEligibleLine([itemId,customerId],connection);
+  if(!line)fail('Đơn chưa đủ điều kiện đổi/trả.');
+  if(!line.NgayGiao||Date.now()-new Date(line.NgayGiao).getTime()>storeConfig.returnDays*86400000)
+    fail('Đã hết thời hạn '+storeConfig.returnDays+' ngày gửi yêu cầu đổi/trả.');
+  const [{n}]=await repository.requestedQuantity([itemId],connection);
+  return {line,remaining:line.SoLuong-Number(n)};
+}
+
+// Mục 5.3: nhận hàng trước, đơn đổi giá trị thu bằng 0 chỉ tạo khi đủ tiền đơn gốc và đủ tồn.
+async function createReplacement(connection,user,request,original,line) {
+  const [{paid}]=await orders.confirmedTotal([request.DonHangID],connection);
+  if(paid<original.TongThanhToan)return 'Chờ đối soát đủ tiền đơn gốc trước khi tạo đơn thay thế.';
+  const [target]=await repository.exchangeOptions(line.BienTheID,line.DonGia,line.BienTheDoiSangID,connection);
+  if(!target||target.stock<line.SoLuongDuyet)
+    return 'Biến thể thay thế thiếu tồn hoặc không còn đủ điều kiện cùng giá. Thử lại khi đủ điều kiện.';
+  const value=line.SoLuongDuyet*line.DonGia;
+  const orderCode=code('DOI');
+  const {insertId:id}=await checkout.createOrder([
+    orderCode,randomUUID(),original.KhachHangID,original.HoTenNguoiNhan,original.SoDienThoaiNhan,
+    original.DiaChiNhan,'Đơn thay thế cho '+request.MaYeuCau,original.PhuongThucID,value,value,0
+  ],connection);
+  const {insertId:itemId}=await checkout.addOrderLine([
+    id,target.id,line.MaSanPhamLucMua,target.sku,line.TenSanPhamLucMua,target.size,target.color,
+    line.DanhMucLucMua,line.ThuongHieuLucMua,line.SoLuongDuyet,line.DonGia,value
+  ],connection);
+  await checkout.allocateStock([itemId,line.SoLuongDuyet],connection);
+  await stockLog(connection,user,target.id,'GIU_HANG',0,line.SoLuongDuyet,itemId,null,'Giữ hàng đổi '+request.MaYeuCau);
+  await orders.appendHistory([id,null,'CHO_XAC_NHAN',user.id,'Đơn thay thế cho '+request.MaYeuCau],connection);
+  await repository.linkReplacement([id,request.YeuCauDoiTraID],connection);
+  return null;
+}
+
+function receivedStock(lines,body){
+  // Một lần nhận đủ hàng đã duyệt. Chỉ số đôi đạt kiểm tra mới được nhập lại kho.
+  if(body.items===undefined&&typeof body.sellable==='boolean')
+    return lines.map(line=>body.sellable?line.SoLuongDuyet:0);
+  if(!Array.isArray(body.items)||body.items.length!==lines.length)fail('Hãy nhập kết quả kiểm hàng cho từng dòng.');
+  const items=new Map(body.items.map(item=>[Number(item?.id),item]));
+  return lines.map(line=>{
+    const item=items.get(line.ChiTietDoiTraID);
+    if(!item||item.received==null||Number(item.received)!==line.SoLuongDuyet)fail('Chỉ xác nhận khi đã nhận đủ hàng được duyệt.');
+    const sellable=Number(item.sellable);
+    if(String(item.sellable??'').trim()===''||!Number.isSafeInteger(sellable)||sellable<0||sellable>line.SoLuongDuyet)
+      fail('Số đôi bán lại phải từ 0 đến số đã nhận.');
+    return sellable;
+  });
+}
 
 // ReturnController chuyển yêu cầu tới các phương thức xử lý đánh giá, yêu cầu trả hàng và hoàn tiền.
 export class ReturnService {
@@ -28,8 +82,16 @@ export class ReturnService {
     return await repository.forCustomer([r.user.id]);
   }
 
+  async options(r) {
+    return tx(async c=>{
+      const {line,remaining}=await eligibleLine(positive(r.params.itemId),r.user.id,c);
+      const variants=remaining>0?await repository.exchangeOptions(line.BienTheID,line.DonGia,null,c):[];
+      return {remaining,variants};
+    });
+  }
+
   async requestReturn(r) {
-    await tx(async (c) => {
+    return withImageUpload(r.imageFile,'returns',save=>tx(async (c) => {
       const item = positive(r.body.itemId),
         qty = positive(r.body.quantity);
       const requestId = r.body.requestId || randomUUID();
@@ -38,35 +100,60 @@ export class ReturnService {
       const [old] = await repository.findByKey([requestId], c);
       if (old) {
         if (old.owner !== r.user.id) fail('Mã yêu cầu đã sử dụng.', 409);
-        return { id: old.id };
+        return { ok:true,id:old.id,code:old.code,status:old.status };
       }
-      const [l] = await repository.lockEligibleLine([item, r.user.id], c);
-      if (!l) fail('Đơn chưa đủ điều kiện đổi/trả.');
-      if (!l.NgayGiao || Date.now() - new Date(l.NgayGiao).getTime() > storeConfig.returnDays * 86400000)
-        fail('Đã hết thời hạn ' + storeConfig.returnDays + ' ngày gửi yêu cầu trả hàng.');
-      const [{ n }] = await repository.requestedQuantity([item], c);
-      if (Number(n) + qty > l.SoLuong) fail('Số lượng vượt quá đơn.');
-      if (r.body.type !== 'TRA') fail('Đổi size được xử lý bằng trả hàng, hoàn tiền và đặt đơn mới.');
+      const {line:l,remaining}=await eligibleLine(item,r.user.id,c);
+      if(qty>remaining)fail('Số lượng vượt phần còn được đổi/trả.');
+      const {type}=r.body;
+      if(!['TRA','DOI'].includes(type))fail('Loại yêu cầu không hợp lệ.');
+      const targetId=type==='DOI'?positive(r.body.targetVariantId,'Biến thể đổi'):null;
+      if(targetId!=null){
+        const [target]=await repository.exchangeOptions(l.BienTheID,l.DonGia,targetId,c);
+        if(!target)fail('Chọn biến thể khác cùng sản phẩm, cùng đơn giá lúc mua.');
+        if(target.stock<qty)fail('Biến thể đổi không đủ hàng.',409);
+      }
+      const requestCode=code('DT');
       const a = await repository.createRequest(
-        [code('DT'), requestId, l.DonHangID, r.user.id, r.body.type, required(r.body.reason, 'lý do')],
+        [requestCode, requestId, l.DonHangID, r.user.id, r.body.type, required(r.body.reason, 'lý do')],
         c,
       );
-      await repository.addLine([a.insertId, l.DonHangID, item, qty], c);
-      if (r.body.image) {
-        if (!/^https?:\/\//.test(r.body.image)) fail('Ảnh bằng chứng phải là URL http/https.');
-        await repository.attachImage([a.insertId, productImage(r.body.image)], c);
-      }
+      await repository.addLine([a.insertId, l.DonHangID, item, qty, targetId], c);
+      let image=productImage(r.body.image);
+      if (image && !/^https?:\/\//i.test(image)) fail('Ảnh bằng chứng phải là URL http/https.');
+      if (r.imageFile) image='/api/returns/'+a.insertId+'/images/'+await save();
+      if (image) await repository.attachImage([a.insertId,image],c);
       await repository.recordSubmission([a.insertId, r.user.id], c);
-    });
-    return { ok: true };
+      return {ok:true,id:a.insertId,code:requestCode,status:'CHO_DUYET'};
+    }));
   }
 
   async detail(r) {
-    const [y] = await repository.ownedRequest([positive(r.params.id), r.user.id]);
+    return this.#readDetail(positive(r.params.id),r.user.id);
+  }
+
+  async managedDetail(r) {
+    const detail=await this.#readDetail(positive(r.params.id));
+    for (const image of detail.images) {
+      if (image.url.startsWith('/api/returns/')) image.url=image.url.replace('/api/returns/','/api/manage/returns/');
+    }
+    return detail;
+  }
+
+  async requireEvidence(r,managed) {
+    const id=positive(r.params.id);
+    const url='/api/returns/'+id+'/images/'+r.params.name;
+    const [image]=await repository.requestImage(id,url,managed?undefined:r.user.id);
+    if (!image) fail('Không tìm thấy ảnh.',404);
+  }
+
+  // Mục 3.7: chủ shop đọc đơn gốc, dòng hàng và bằng chứng trước khi quyết định.
+  async #readDetail(id,customerId) {
+    const [y] = await repository.requestDetails(id,customerId);
     if (!y) fail('Không tìm thấy yêu cầu.', 404);
     y.items = await repository.lines([y.id]);
     y.history = await repository.history([y.id]);
     y.refunds = await repository.refunds([y.id]);
+    y.images = await repository.images([y.id]);
     return y;
   }
 
@@ -75,33 +162,41 @@ export class ReturnService {
   }
 
   async processReturn(r) {
-    await tx(async (c) => {
+    return tx(async (c) => {
       const id = positive(r.params.id),
         action = r.body.action;
       const [y] = await repository.lockRequest([id], c);
-      if (!y) fail('Không có yêu cầu.');
+      if (!y) fail('Không tìm thấy yêu cầu.',404);
+      const exchange=y.LoaiYeuCau==='DOI';
+      const [original]=exchange?await orders.lockOrder([y.DonHangID],c):[];
       const lines = await repository.lockLines([id], c);
-      let status;
+      if(!lines.length||(exchange&&lines.length!==1))fail('Yêu cầu có dòng hàng không hợp lệ.',409);
+      let status, pending;
+      if(exchange&&y.DonHangDoiMoiID&&['create-exchange','receive'].includes(action))return {ok:true};
       if (['approve', 'reject'].includes(action)) {
         if (y.TrangThai !== 'CHO_DUYET') fail('Yêu cầu đã được duyệt.');
         status = action === 'approve' ? 'DA_DUYET' : 'TU_CHOI';
         if (action === 'approve')
           for (const l of lines) {
-            await repository.approveLine(
-              [Math.floor((l.paid * l.SoLuongYeuCau) / l.bought), l.ChiTietDoiTraID],
-              c,
-            );
+            // Phân bổ theo tổng số đã duyệt để lần trả cuối nhận đủ phần tiền lẻ.
+            if(exchange){await repository.approveLine([0,l.ChiTietDoiTraID],c);continue;}
+            const [shares]=await repository.approvedReturnShares([l.ChiTietDonHangID,id],c);
+            const quantity=Number(shares.quantity)+l.SoLuongYeuCau;
+            const allocated=quantity===l.bought?l.paid:Math.floor(l.paid*quantity/l.bought);
+            const refund=Math.max(0,Math.round((allocated-Number(shares.amount))*100)/100);
+            await repository.approveLine([refund,l.ChiTietDoiTraID],c);
           }
         await repository.recordDecision([r.user.id, required(r.body.reason, 'lý do xử lý'), id], c);
       } else if (action === 'receive') {
         if (y.TrangThai !== 'DA_DUYET') fail('Chỉ nhận hàng một lần sau khi duyệt.');
         status = 'DANG_XU_LY';
-        for (const l of lines) {
-          const sellable = r.body.sellable ? l.SoLuongDuyet : 0;
+        const counts=receivedStock(lines,r.body);
+        for (const [index,l] of lines.entries()) {
+          const sellable = counts[index];
           await repository.receiveLine([sellable, r.user.id, text(r.body.reason), l.ChiTietDoiTraID], c);
           if (sellable) {
             const a = await repository.createReceipt(
-              [code('HT'), randomUUID(), 'Nhận hàng trả ' + y.MaYeuCau, r.user.id],
+              [code('HT'), randomUUID(), 'Nhận hàng trả ' + y.MaYeuCau, r.user.id, r.user.id],
               c,
             );
             const p = await repository.addReceiptLine(
@@ -121,13 +216,21 @@ export class ReturnService {
             );
           }
         }
-        await prepareReturnRefunds(c, id, y.DonHangID, y.LyDo);
+        if(exchange)pending=await createReplacement(c,r.user,y,original,lines[0]);
+        else await prepareReturnRefunds(c, id, y.DonHangID, y.LyDo);
+      } else if(action==='create-exchange'){
+        if(!exchange||y.TrangThai!=='DANG_XU_LY')fail('Cần nhận đủ hàng đổi trước khi tạo đơn thay thế.');
+        pending=await createReplacement(c,r.user,y,original,lines[0]);
+        if(pending)fail(pending,409);
+        status='DANG_XU_LY';
       } else if (action === 'prepare-refund') {
+        if(exchange)fail('Yêu cầu đổi hàng dùng đơn thay thế.');
         if (y.TrangThai !== 'DANG_XU_LY') fail('Cần nhận hàng trước khi lập khoản hoàn.');
         await prepareReturnRefunds(c, id, y.DonHangID, y.LyDo);
         status = 'DANG_XU_LY';
       } else if (action === 'complete') {
         if (y.TrangThai !== 'DANG_XU_LY') fail('Cần nhận và kiểm tra hàng trước.');
+        if(exchange&&!y.DonHangDoiMoiID)fail('Cần tạo đơn thay thế trước khi hoàn tất.');
         const [{ n }] = await repository.pendingRefunds([id], c);
         if (n) fail('Cần xác nhận hoàn tiền trước khi hoàn tất.');
         const [{ owed }] = await repository.approvedTotal([id], c);
@@ -139,12 +242,12 @@ export class ReturnService {
       } else fail('Thao tác không hợp lệ.');
       await repository.setStatus([status, id], c);
       await repository.recordHistory(
-        [id, y.TrangThai, status, r.user.id, text(r.body.reason) || action],
+        [id, y.TrangThai, status, r.user.id, pending || (action==='create-exchange'?'Đã tạo đơn thay thế':text(r.body.reason)||action)],
         c,
       );
       await audit(r.user, 'XU_LY_DOI_TRA', 'YeuCauDoiTra', id, action, c);
+      return {ok:true,...(pending?{message:pending}:{})};
     });
-    return { ok: true };
   }
 
   async refunds() {
@@ -154,7 +257,7 @@ export class ReturnService {
   async confirmRefund(r) {
     await tx(async (c) => {
       const [h] = await repository.lockRefund([positive(r.params.id)], c);
-      if (!h) fail('Không có khoản hoàn.');
+      if (!h) fail('Không có khoản hoàn.',404);
       if (h.TrangThai === 'DA_XAC_NHAN') return;
       if (!['CHO_XU_LY', 'DANG_XU_LY'].includes(h.TrangThai))
         fail('Khoản hoàn cần ở trạng thái chờ; hãy thử lại nếu đã thất bại.');

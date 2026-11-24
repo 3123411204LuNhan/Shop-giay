@@ -110,16 +110,16 @@ Không khởi động container trùng cổng 3306 với MySQL đang chạy. Doc
 - Quên mật khẩu bằng OTP 6 số qua Gmail/SMTP; nếu chưa cấu hình hoặc gửi thất bại thì lưu hộp thư `.local/mail`. Xác minh mã trước khi đặt mật khẩu mới.
 - Đặt hàng bằng COD hoặc chuyển khoản; áp mã giảm giá; miễn phí giao hàng từ 1.500.000đ, còn lại 30.000đ.
 - Xem đơn, lịch sử trạng thái; hủy trước khi giao; gửi đánh giá cho đơn hoàn thành.
-- Gửi yêu cầu trả hàng kèm số lượng, lý do và URL ảnh bằng chứng. Yêu cầu đổi size được xử lý bằng trả/hoàn tiền và đặt lại, chưa có giao đổi thay thế tự động.
+- Gửi yêu cầu đổi hoặc trả kèm số lượng, lý do và ảnh bằng chứng tùy chọn từ tệp hoặc URL. Đổi sang biến thể khác cùng sản phẩm và cùng đơn giá lúc mua. Sau khi nhận hàng và kiểm tra điều kiện, shop tạo đơn thay thế.
 - Yêu thích sản phẩm trên thiết bị, là tiện ích bổ sung không tạo bảng ngoài 37 bảng chính.
 
 ### Chủ shop
 
 - Dashboard: khoản thu đã xác nhận trừ khoản hoàn đã xác nhận, đơn trong kỳ, đơn chờ xử lý, cảnh báo tồn thấp, dòng tiền theo ngày, sản phẩm bán chạy.
 - Chọn khoảng ngày và xuất CSV tổng hợp.
-- Tạo/sửa/ẩn/ngừng bán sản phẩm; cấu hình danh mục, thương hiệu, giá và URL ảnh.
+- Tạo/sửa/ẩn/ngừng bán sản phẩm; cấu hình danh mục, thương hiệu, giá và ảnh tùy chọn từ tệp hoặc URL.
 - Tạo biến thể; sửa size/màu khi chưa giao dịch; sửa giá riêng, ẩn/hiện biến thể. Biến thể đã giao dịch không được đổi size/màu.
-- Xem tồn thực tế, lượng đang giữ, tồn khả dụng; nhập kho hoặc ghi chênh lệch kiểm kê; nhập mã chứng từ và lý do.
+- Xem tồn thực tế, lượng đang giữ, tồn khả dụng; nhập kho theo chứng từ hoặc nhập số kiểm đếm để tạo phiếu điều chỉnh kèm lý do.
 - Xem chi tiết đơn, chuyển bước theo quy trình; xác nhận thu tiền bằng bằng chứng; hủy đơn và giải phóng kho.
 - Tạo/sửa thông tin ưu đãi, kích hoạt và kết thúc. Giao diện hiện tạo phạm vi toàn bộ sản phẩm; backend còn đọc được phạm vi sản phẩm/danh mục/thương hiệu trong database.
 - Xem khách hàng và tổng hợp lịch sử đơn.
@@ -193,7 +193,7 @@ Shop-giay/
 - Giá và giảm giá đã chụp trên đơn không thay đổi theo việc sửa sản phẩm hoặc chương trình sau này.
 - Khi chọn nhiều mã, bản hiện tại chỉ nhận **một mã ưu đãi cho một đơn**. Cột kết hợp trong schema được giữ cho mở rộng nhưng chưa có giao diện cộng dồn mã.
 - `rowversion` của SQL Server được chuyển thành `PhienBan bigint` trên MySQL. Các thao tác kho và đơn quan trọng dùng khóa `FOR UPDATE`; đây không phải tính năng rowversion tự động của MySQL.
-- Không có tác vụ tự động hủy đơn hết hạn. Gửi OTP email thật cần cấu hình SMTP theo EMAIL_SETUP.md. Bản hiện tại không tải file ảnh lên máy chủ; form ảnh nhận URL.
+- Không có tác vụ tự động hủy đơn hết hạn. Gửi OTP email thật cần cấu hình SMTP theo EMAIL_SETUP.md. Ảnh sản phẩm và ảnh bằng chứng hỗ trợ một tệp JPEG, PNG hoặc WebP tối đa 5 MB, hoặc một URL. Tệp mặc định lưu tại `.local/uploads` và có thể đổi thư mục qua biến `IMAGE_UPLOAD_DIR`. Ảnh bằng chứng tải lên được phục vụ qua API kiểm tra quyền.
 
 ## Nguồn ảnh minh họa
 

@@ -318,24 +318,19 @@ Thêm vào giỏ **không làm giảm tồn kho ngay**. Tồn được kiểm tr
 
 ## 2.16. Gửi yêu cầu đổi/trả hàng
 
-### Luồng nghiệp vụ suy ra trực tiếp từ yêu cầu và mô hình dữ liệu
-1. Khách hàng đăng nhập và mở đơn đủ điều kiện đổi/trả.
-2. Chọn dòng hàng cần đổi hoặc trả.
-3. Chọn loại yêu cầu **Đổi** hoặc **Trả**.
-4. Nhập số lượng, lý do và thông tin liên quan.
-5. Có thể đính kèm hình ảnh bằng chứng.
-6. Nếu đổi, chọn/đề xuất biến thể muốn đổi sang khi chính sách cho phép.
-7. Hệ thống kiểm tra đơn thuộc khách hàng và số lượng yêu cầu không vượt số lượng đã mua.
-8. Hệ thống tạo yêu cầu đổi/trả ở trạng thái chờ duyệt.
-9. Hệ thống thông báo mã yêu cầu/trạng thái cho khách hàng.
-10. Yêu cầu được chuyển sang quy trình xử lý của Shop Manager.
+### Luồng chính
+
+1. Khách đăng nhập, mở đơn đã giao hoặc đã hoàn thành trong thời hạn đổi/trả. Mặc định là 7 ngày kể từ lúc giao.
+2. Chọn dòng hàng, số lượng và loại **Trả** hoặc **Đổi**. Nhập lý do. Ảnh bằng chứng là tùy chọn, có thể chọn một tệp JPEG, PNG hoặc WebP tối đa 5 MB hoặc nhập một URL HTTP(S). Tệp tải lên chỉ chủ yêu cầu và Shop Manager xem được.
+3. Với yêu cầu **Đổi**, chọn size hoặc màu khác của cùng sản phẩm, cùng đơn giá lúc mua. Biến thể phải đang bán và có đủ tồn khả dụng.
+4. Hệ thống kiểm tra chủ đơn và tính số lượng còn được đổi/trả. Số lượng đã yêu cầu trước đó được tính vào giới hạn, trừ yêu cầu bị từ chối hoặc đã hủy.
+5. Hệ thống tạo yêu cầu **Chờ duyệt**, trả mã và trạng thái, rồi mở chi tiết để khách theo dõi phản hồi và lịch sử.
 
 ### Ngoại lệ
-- Đơn không hợp lệ/không thuộc khách hàng: từ chối.
-- Số lượng yêu cầu vượt số đã mua: từ chối.
-- Yêu cầu gửi lặp: không tạo bản ghi trùng.
 
-> Báo cáo có yêu cầu chức năng và lớp dữ liệu cho việc khách gửi yêu cầu, nhưng chưa có đặc tả Use Case Customer độc lập ở Chương 3.
+- Đơn không đủ điều kiện, không thuộc khách, quá hạn hoặc số lượng vượt phần còn lại thì từ chối.
+- Yêu cầu đổi có biến thể sai hoặc thiếu tồn thì từ chối và yêu cầu chọn lại.
+- Gửi lại cùng mã chống lặp trả về yêu cầu đã có và trạng thái hiện tại. Mã của tài khoản khác bị từ chối.
 
 ---
 
@@ -369,7 +364,7 @@ Thêm vào giỏ **không làm giảm tồn kho ngay**. Tồn được kiểm tr
 1. Manager đăng nhập và mở quản lý sản phẩm.
 2. Hệ thống hiển thị danh sách.
 3. Manager chọn thêm sản phẩm.
-4. Nhập thông tin sản phẩm, danh mục, thương hiệu, giá, hình ảnh.
+4. Nhập thông tin sản phẩm, danh mục, thương hiệu và giá. Có thể chọn một tệp ảnh JPEG, PNG hoặc WebP tối đa 5 MB, hoặc nhập URL ảnh. Có thể lưu sản phẩm không kèm ảnh.
 5. Hệ thống kiểm tra dữ liệu và mã duy nhất.
 6. Nếu hợp lệ, tạo sản phẩm.
 7. Hệ thống thông báo kết quả.
@@ -377,7 +372,7 @@ Thêm vào giỏ **không làm giảm tồn kho ngay**. Tồn được kiểm tr
 ### Cập nhật sản phẩm
 1. Chọn sản phẩm.
 2. Hệ thống hiển thị dữ liệu hiện tại.
-3. Manager chỉnh sửa trường được phép.
+3. Manager chỉnh sửa trường được phép. Với ảnh chính, có thể giữ, thay bằng tệp hoặc URL, hoặc xóa.
 4. Hệ thống kiểm tra dữ liệu.
 5. Cập nhật sản phẩm.
 6. Thông báo kết quả.
@@ -400,8 +395,8 @@ Thêm vào giỏ **không làm giảm tồn kho ngay**. Tồn được kiểm tr
 ## 3.2. Quản lý biến thể sản phẩm
 
 ### Xem danh sách biến thể
-1. Manager chọn sản phẩm.
-2. Hệ thống lấy danh sách biến thể.
+1. Manager mở **Quản lý biến thể** và chọn một sản phẩm.
+2. Hệ thống lấy danh sách biến thể của sản phẩm đã chọn.
 3. Hiển thị size, màu, trạng thái và thông tin liên quan.
 
 ### Thêm biến thể
@@ -456,7 +451,7 @@ Thay đổi số lượng tồn kho **không thuộc** quản lý biến thể, 
 ## 3.5. Quản lý tồn kho
 
 ### Xem tồn kho
-1. Manager chọn xem tồn kho.
+1. Manager mở **Quản lý tồn kho**. Có thể xem toàn kho hoặc lọc theo sản phẩm.
 2. Hệ thống lấy tồn theo từng biến thể.
 3. Hiển thị tồn vật lý, lượng đã phân bổ và lượng khả dụng.
 4. Biến thể chưa có dữ liệu tồn được hiểu là 0.
@@ -473,8 +468,8 @@ Thay đổi số lượng tồn kho **không thuộc** quản lý biến thể, 
 
 ### Điều chỉnh tồn kho
 1. Manager chọn điều chỉnh.
-2. Chọn biến thể và cung cấp số lượng kiểm đếm/lý do.
-3. Hệ thống kiểm tra dữ liệu.
+2. Chọn biến thể từ màn hình tồn kho hoặc phiếu kho. Nhập số lượng kiểm đếm thực tế và lý do.
+3. Hệ thống tính chênh lệch từ tồn sổ khi lưu nháp và kiểm tra lại tồn sổ khi xác nhận. Nếu tồn đã thay đổi, chủ shop kiểm đếm lại trước khi lưu phiếu.
 4. Không cho điều chỉnh làm tồn khả dụng âm hoặc mâu thuẫn lượng đã phân bổ.
 5. Ghi phiếu điều chỉnh.
 6. Cập nhật tồn.
@@ -531,40 +526,26 @@ Thay đổi số lượng tồn kho **không thuộc** quản lý biến thể, 
 
 ## 3.7. Quản lý yêu cầu đổi/trả
 
-### Tiếp nhận
-1. Hệ thống có yêu cầu đổi/trả do khách gửi.
-2. Manager mở danh sách chờ xử lý.
-3. Chọn một yêu cầu.
-4. Hệ thống hiển thị đơn hàng, dòng sản phẩm, số lượng, lý do và ảnh bằng chứng.
+### Tiếp nhận và quyết định
 
-### Phê duyệt/từ chối
-1. Manager kiểm tra điều kiện nghiệp vụ.
-2. Chọn **Phê duyệt** hoặc **Từ chối**.
-3. Nhập lý do xử lý.
-4. Nếu từ chối: lưu quyết định, ghi lịch sử, thông báo khách hàng và kết thúc.
-5. Nếu phê duyệt: xác định quy trình hoàn tiền và/hoặc nhận hàng hoàn.
+1. Chủ shop mở chi tiết yêu cầu từ danh sách. Hệ thống hiển thị mã đơn gốc, dòng hàng, size, màu, biến thể muốn đổi, số lượng, lý do, bằng chứng và lịch sử.
+2. Chủ shop duyệt hoặc từ chối yêu cầu **Chờ duyệt** và nhập lý do. Hệ thống lưu người xử lý, thời điểm và phản hồi để khách theo dõi.
+3. Khi duyệt yêu cầu trả, hệ thống tính tiền hoàn dựa trên giá trị dòng sau giảm giá. Mỗi lần duyệt lấy phần tiền tăng thêm theo số lượng trả lũy kế. Lần trả hết dòng nhận phần tiền lẻ còn lại.
 
-### Hoàn tiền
-1. Xác định số tiền được phép hoàn dựa trên phần hàng được duyệt.
-2. Manager xác nhận số tiền.
-3. Hệ thống tạo giao dịch hoàn tiền.
-4. Khi có xác nhận thành công, cập nhật trạng thái hoàn tiền.
-5. Không cho hoàn vượt số đã thanh toán hoặc hoàn lặp.
+### Nhận hàng và xử lý
 
-### Nhận hàng hoàn
-1. Manager xác nhận đã nhận hàng.
-2. Kiểm tra tình trạng hàng.
-3. Ghi nhận số lượng đã nhận.
-4. Nếu hàng đủ điều kiện bán lại, tạo nghiệp vụ nhận trả/nhập lại kho.
-5. Nếu không đủ điều kiện, không tăng tồn khả dụng.
-6. Cập nhật trạng thái yêu cầu.
-7. Ghi lịch sử và hoàn tất khi các bước cần thiết đã xong.
+1. Chủ shop xác nhận một lần sau khi đã nhận đủ số lượng được duyệt. Nhập số đôi bán lại được theo từng dòng, từ 0 đến số đã nhận.
+2. Hệ thống chỉ ghi tăng kho cho số đôi bán lại được, rồi chuyển yêu cầu sang **Đang xử lý**.
+3. **Trả hàng.** Hệ thống lập khoản hoàn trong giới hạn tiền đã đối soát. Nếu đơn còn chờ đối soát, việc nhận hàng vẫn được lưu. Sau đối soát, chủ shop có thể lập bổ sung khoản hoàn.
+4. Chủ shop thực hiện hoàn tiền, nhập bằng chứng và xác nhận. Khoản hoàn thất bại có thể được thử lại. Chỉ hoàn tất khi tiền hoàn đã được xác nhận đủ.
+5. **Đổi hàng.** Sau khi nhận hàng, hệ thống kiểm tra lại tồn, giá của biến thể thay thế và khoản thu của đơn gốc. Nếu đủ điều kiện, hệ thống tạo và liên kết một đơn thay thế, giữ kho một lần và không thu thêm.
+6. Nếu còn chờ đối soát hoặc biến thể thiếu tồn hay không còn đúng giá, yêu cầu vẫn ở **Đang xử lý** và kết quả nhận hàng được giữ. Chủ shop thử tạo lại đơn thay thế sau khi điều kiện được đáp ứng. Chỉ hoàn tất khi đã có đơn thay thế.
 
 ### Ngoại lệ
-- Yêu cầu/đơn không tồn tại.
-- Số lượng yêu cầu > số đã mua.
-- Hoàn tiền thất bại/chờ xác nhận.
-- Yêu cầu đã xử lý: không thực hiện lần hai.
+
+- Yêu cầu hoặc khoản hoàn không tồn tại thì báo lỗi.
+- Từ chối xử lý sai trạng thái hoặc số lượng kiểm hàng không hợp lệ.
+- Gửi lại thao tác nhận, tạo đơn thay thế hoặc xác nhận hoàn không ghi kho, tạo đơn hay hoàn tiền lặp.
 
 ---
 
@@ -752,21 +733,15 @@ Khách hàng hoặc Shop Manager yêu cầu hủy
 ## 5.3. Luồng đổi/trả
 
 ```text
-Khách hàng chọn đơn đã mua
-  -> Gửi yêu cầu đổi/trả
-  -> Hệ thống tạo yêu cầu Chờ duyệt
-  -> Shop Manager tiếp nhận
-  -> Kiểm tra đơn + dòng hàng + số lượng + lý do
-  -> Phê duyệt hoặc Từ chối
-     -> [Từ chối] ghi lý do -> thông báo khách
-     -> [Phê duyệt]
-          -> Nhận hàng hoàn
-          -> Kiểm tra tình trạng
-          -> [Bán lại được] nhập lại kho
-          -> [Cần hoàn tiền] xử lý hoàn tiền
-          -> [Đổi hàng] xử lý biến thể/đơn thay thế nếu áp dụng
-          -> Hoàn tất yêu cầu
-  -> Ghi lịch sử
+Khách chọn dòng thuộc đơn đã giao hoặc hoàn thành
+  -> Chọn trả hàng hoặc đổi sang biến thể cùng sản phẩm và cùng giá
+  -> Gửi yêu cầu và nhận mã Chờ duyệt
+  -> Chủ shop mở chi tiết, xem bằng chứng và ghi quyết định
+     -> [Từ chối] khách xem lý do trong chi tiết yêu cầu
+     -> [Duyệt] nhận đủ hàng một lần, nhập số đôi bán lại
+          -> [Trả] đối soát khoản thu, lập khoản hoàn, xác nhận đã hoàn đủ
+          -> [Đổi] kiểm tra đơn gốc và tồn, tạo đơn thay thế hoặc chờ thử lại
+          -> Hoàn tất và lưu lịch sử
 ```
 
 ## 5.4. Luồng tồn kho

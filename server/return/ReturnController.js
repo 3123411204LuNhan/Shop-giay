@@ -1,3 +1,4 @@
+import { imageForm, sendUploadedImage } from '../image-upload.js';
 import { ReturnService } from './ReturnService.js';
 
 // Ánh xạ API đánh giá, yêu cầu trả hàng và hoàn tiền tới ReturnService.
@@ -17,8 +18,10 @@ export class ReturnController {
     );
     router.post(
       '/returns',
+      imageForm,
       run((r) => this.service.requestReturn(r)),
     );
+    router.get('/returns/options/:itemId',run((r)=>this.service.options(r)));
     router.get(
       '/returns/:id',
       run((r) => this.service.detail(r)),
@@ -28,6 +31,15 @@ export class ReturnController {
       manager,
       run(() => this.service.listAll()),
     );
+    router.get('/manage/returns/:id', manager, run((r) => this.service.managedDetail(r)));
+    const evidence = managed => async (req,res,next) => {
+      try {
+        await this.service.requireEvidence(req,managed);
+        sendUploadedImage('returns',req.params.name,res,next);
+      } catch (error) { next(error); }
+    };
+    router.get('/returns/:id/images/:name',evidence(false));
+    router.get('/manage/returns/:id/images/:name',manager,evidence(true));
     router.post(
       '/manage/returns/:id/action',
       manager,

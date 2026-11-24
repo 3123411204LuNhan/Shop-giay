@@ -7,6 +7,7 @@ export class InventoryController {
   }
 
   register(router, { run, manager }) {
+    router.get('/manage/stock',manager,run(r=>this.service.stock(r)));
     router.post(
       '/manage/stock',
       manager,

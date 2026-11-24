@@ -50,19 +50,19 @@ Nếu tiền chuyển đến sau khi đơn hủy: quản lý mở đơn → Ti�
 
 ## Kho và phiếu nhập
 
-Vào Biến thể & kho để xem tồn thực tế, đang giữ, khả dụng và ngưỡng cảnh báo. Bấm Chỉ xem sắp hết để lọc khả dụng ≤ ngưỡng; bấm Ngưỡng để đặt mức 5, 10 hoặc mức phù hợp mỗi biến thể.
+Vào **Quản lý tồn kho** để xem tồn thực tế, đang giữ, khả dụng và ngưỡng cảnh báo. Dùng **Quản lý biến thể** để thêm, sửa hoặc ẩn size/màu. Bấm Chỉ xem sắp hết để lọc khả dụng ≤ ngưỡng; bấm Ngưỡng để đặt mức 5, 10 hoặc mức phù hợp mỗi biến thể.
 
 Quản lý kiểm tra cảnh báo, đặt hàng nhà cung cấp bên ngoài website, nhận và kiểm hàng rồi lập phiếu:
 
-1. Mở Phiếu kho → Lập phiếu kho, hoặc chọn Lập phiếu kho trên một biến thể.
+1. Vào **Quản lý tồn kho → Phiếu kho → Lập phiếu kho**. Cũng có thể chọn **Nhập kho** hoặc **Điều chỉnh tồn** ngay trên dòng tồn kho để mở phiếu với biến thể điền sẵn.
 2. Chọn Nhập hàng thực nhận, nhập nhà cung cấp, mã chứng từ, ghi chú, các biến thể, số lượng thực nhận và giá nhập.
 3. Lưu phiếu nháp: chưa tăng tồn, có thể sửa hoặc hủy.
 4. Kiểm tra chi tiết rồi Xác nhận ghi sổ kho: cập nhật tồn và sổ kho trong cùng giao dịch, chỉ một lần.
-5. Phiếu đã ghi sổ được giữ nguyên; sai số lượng thì lập phiếu Điều chỉnh chênh lệch (+/−), ghi lý do và mã phiếu gốc.
+5. Phiếu đã ghi sổ được giữ nguyên; sai số lượng thì lập phiếu Điều chỉnh theo số kiểm đếm, ghi lý do và mã phiếu gốc.
 
-Mã chứng từ nhập không được dùng lại cho một phiếu nhập khác, kể cả khi tải lại trang. Nháp đã hủy vẫn giữ chứng từ để đối soát. Phiếu điều chỉnh ghi phần chênh lệch, không ghi số tồn cuối. Ví dụ tồn hệ thống 10, kiểm thực tế 8 thì nhập −2. Điều chỉnh không được làm tồn thực tế thấp hơn phần đã giữ.
+Mã chứng từ nhập không được dùng lại cho một phiếu nhập khác, kể cả khi tải lại trang. Nháp đã hủy vẫn giữ chứng từ để đối soát. Phiếu điều chỉnh nhận số thực tế đã kiểm đếm. Ví dụ tồn sổ 12, đếm được 9 thì nhập 9. Hệ thống tính chênh lệch −3 và chỉ ghi tồn khi xác nhận phiếu. Nếu tồn sổ thay đổi, kiểm đếm lại và lưu lại phiếu nháp. Số đếm phải đủ cho lượng đang giữ.
 
-Lịch sử kho cho biết người xử lý, tăng/giảm tồn và phần giữ, số dư sau mỗi thao tác. Với thao tác hết hạn tự động, người thực hiện để trống và lý do ghi rõ Hệ thống.
+Nút **Lịch sử kho** ở góc trên trang Quản lý tồn kho mở bảng cho biết người xử lý, tăng/giảm tồn và phần giữ, số dư sau mỗi thao tác. Với thao tác hết hạn tự động, người thực hiện để trống và lý do ghi rõ Hệ thống.
 
 ## Giao hàng và hàng hoàn về
 
@@ -77,20 +77,14 @@ Nếu giao thất bại:
 
 Phiên bản này xác nhận nhận hoàn vận chuyển một lần khi đã kiểm đủ tất cả dòng/số lượng; chưa hỗ trợ nhận từng phần kiện thất lạc. Hàng lỗi không được cộng vào tồn bán được; chưa có phân hệ kho hàng lỗi riêng.
 
-## Khách trả hàng và hoàn tiền
+## Khách đổi hoặc trả hàng
 
-Khách mở Đơn hàng của tôi → Chi tiết → Trả hàng / đổi size. Mặc định gửi trong 7 ngày từ ngày giao. Hệ thống kiểm tra chủ đơn và số lượng còn được yêu cầu, bao gồm các yêu cầu trước đang chờ/xử lý.
+Khách mở **Đơn hàng của tôi → Chi tiết → Gửi yêu cầu đổi / trả** trong thời hạn mặc định 7 ngày kể từ lúc giao. Sau khi gửi, hệ thống hiển thị mã, trạng thái và chi tiết để theo dõi.
 
-Quản lý vào Đổi / trả hàng:
-
-1. Duyệt hoặc từ chối kèm lý do.
-2. Sau khi nhận đủ phần hàng được duyệt, xác nhận nhận hàng và tình trạng bán lại. Phiên bản này xử lý nhận một lần cho toàn bộ số lượng được duyệt của yêu cầu.
-3. Hàng đủ chất lượng được nhập lại kho. Nếu khoản thu chưa đối soát, hàng nhận vẫn được lưu; yêu cầu tiếp tục chờ xử lý tiền.
-4. Đối soát khoản thu nếu cần, rồi chọn Lập bổ sung khoản hoàn. Thao tác lặp không tạo dư nghĩa vụ hoàn.
-5. Vào Hoàn tiền, thực hiện chuyển tiền bên ngoài hệ thống rồi nhập bằng chứng Xác nhận đã hoàn. Nếu chuyển tiền thất bại, ghi Hoàn thất bại; sau khi khắc phục bấm Thử lại hoàn tiền rồi xác nhận.
-6. Chỉ Hoàn tất yêu cầu sau khi đã nhận hàng và xác nhận hoàn đủ tiền được duyệt.
-
-Khách có nút Theo dõi xử lý để xem số lượng duyệt/nhận, phản hồi, lịch sử và trạng thái hoàn tiền. Đổi size dùng trả hàng, hoàn tiền và đặt đơn mới; chưa tự giao hàng thay thế.
+1. Chủ shop mở **Đổi / trả hàng → Xem chi tiết**, xem dòng hàng và bằng chứng rồi duyệt hoặc từ chối kèm lý do.
+2. Sau khi nhận đủ theo số lượng duyệt, nhập số đôi bán lại được ở từng dòng và xác nhận. Tồn chỉ tăng theo số đôi đạt.
+3. Với yêu cầu trả, shop lập khoản hoàn sau khi đối soát, thực hiện chuyển tiền và điền bằng chứng. Khoản thất bại có thể thử lại. Chỉ hoàn tất sau khi đã hoàn đủ.
+4. Với yêu cầu đổi, đơn thay thế được tạo sau khi nhận hàng nếu đơn gốc đã thu đủ và biến thể cùng giá còn tồn. Nếu phải chờ, kết quả nhận hàng vẫn được lưu. Dùng nút **Tạo lại đơn thay thế** sau khi đủ điều kiện.
 
 ## Dữ liệu và kiểm thử
 
