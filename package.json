@@ -7,16 +7,16 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "node scripts/start-system.js",
+    "dev": "node frontend/scripts/start-system.js",
     "build": "vite build frontend",
-    "start": "node scripts/start-system.js --production",
-    "db:setup": "node scripts/start-system.js --db-setup",
-    "db:seed": "node scripts/start-system.js --db-seed",
+    "start": "node frontend/scripts/start-system.js --production",
+    "db:setup": "node frontend/scripts/start-system.js --db-setup",
+    "db:seed": "node frontend/scripts/start-system.js --db-seed",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
-    "test:integration": "node scripts/start-system.js --test-integration",
-    "check": "node --check scripts/start-system.js && node --check scripts/test-integration.js && dotnet build backend/ShopGiay.Api",
-    "db:migrate": "node scripts/start-system.js --db-migrate",
-    "mail:verify": "node scripts/start-system.js --verify-mail"
+    "test:integration": "node frontend/scripts/start-system.js --test-integration",
+    "check": "node --check frontend/scripts/start-system.js && node --check frontend/scripts/test-integration.js && dotnet build backend/ShopGiay.Api",
+    "db:migrate": "node frontend/scripts/start-system.js --db-migrate",
+    "mail:verify": "node frontend/scripts/start-system.js --verify-mail"
   },
   "dependencies": {
     "dotenv": "^16.6.1",

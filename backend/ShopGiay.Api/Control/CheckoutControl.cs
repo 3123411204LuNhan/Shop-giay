@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Dapper;
 using MySqlConnector;
 using ShopGiay.Entity;
+using ShopGiay.Infrastructure;
 
 namespace ShopGiay.Control;
 
@@ -13,7 +14,8 @@ public sealed class CheckoutException(string message,int status = 400) : Excepti
     public int Status { get; } = status;
 }
 
-public sealed class CheckoutControl(MySqlDataSource database,IConfiguration config)
+public sealed class CheckoutControl(MySqlDataSource database,IConfiguration config,CartRepository carts,
+    PromotionRepository promotions,OrderRepository orders)
 {
     private sealed class Line
     {
@@ -37,11 +39,13 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
     private sealed record Existing(long Id,long Owner,decimal Total);
     private static readonly JsonSerializerOptions FingerprintOptions = new() { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
 
+    // Kiểm tra giỏ, tồn, ưu đãi và giá để báo giá hoặc tạo đơn trong một giao dịch.
     public async Task<object> Process(long account,CheckoutInput input,bool place,CancellationToken token)
     {
         if (place && !Guid.TryParseExact(input.RequestId,"D",out _)) throw new CheckoutException("Mã yêu cầu không hợp lệ.");
         await using var db = await database.OpenConnectionAsync(token);
         await using var tx = await db.BeginTransactionAsync(token);
+        var session = new SqlSession(db,tx,token);
         CommandDefinition Sql(string sql,object? args = null) => new(sql,args,tx,cancellationToken:token);
 
         if (place) {
@@ -54,7 +58,7 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
             }
         }
 
-        var cart = await CartControl.CartId(db,tx,account,token);
+        var cart = (await carts.LayHoacTao(session,account)).GioHangID;
         var lines = (await db.QueryAsync<Line>(Sql("""
             SELECT b.BienTheID,b.SanPhamID,s.DanhMucID,s.ThuongHieuID,ct.SoLuong,COALESCE(b.GiaBanRieng,s.GiaBan) price,
                    s.MaSanPham,b.SKU,s.TenSanPham,kc.GiaTri size,m.TenMau color,d.TenDanhMuc,t.TenThuongHieu,
@@ -67,9 +71,8 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
         if (lines.Count == 0) throw new CheckoutException("Giỏ hàng đang trống.");
         foreach (var line in lines) {
             if (!line.Available) throw new CheckoutException("Giỏ có sản phẩm đã ngừng kinh doanh.");
-            var stock = await db.QuerySingleOrDefaultAsync<int?>(Sql(
-                "SELECT SoLuongKhaDung FROM TonKho WHERE BienTheID=@BienTheID FOR UPDATE",line));
-            if (!stock.HasValue || stock.Value < line.SoLuong) throw new CheckoutException(line.TenSanPham + " không đủ hàng.");
+            var stock = await InventoryRepository.KhoaTon(session,line.BienTheID);
+            if (stock?.ConDuHang(line.SoLuong) != true) throw new CheckoutException(line.TenSanPham + " không đủ hàng.");
         }
 
         var subtotal = lines.Sum(x => x.Value);
@@ -77,11 +80,9 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
         KhuyenMai? promo = null;
         decimal discount = 0;
         if (!string.IsNullOrWhiteSpace(input.Promo)) {
-            promo = await db.QuerySingleOrDefaultAsync<KhuyenMai>(Sql("""
-                SELECT * FROM KhuyenMai WHERE MaKhuyenMai=@code AND TrangThai='DANG_AP_DUNG'
-                AND BatDauLuc<=UTC_TIMESTAMP() AND KetThucLuc>UTC_TIMESTAMP() FOR UPDATE
-                """,new {code=input.Promo.Trim()}));
-            if (promo == null || subtotal < promo.GiaTriDonToiThieu) throw new CheckoutException("Mã ưu đãi không hợp lệ hoặc đơn chưa đạt điều kiện.");
+            promo = await promotions.KhoaTheoMa(session,input.Promo.Trim());
+            if (promo == null || !promo.ConHieuLuc(await session.Value<DateTime>("SELECT UTC_TIMESTAMP()")) || subtotal < promo.GiaTriDonToiThieu)
+                throw new CheckoutException("Mã ưu đãi không hợp lệ hoặc đơn chưa đạt điều kiện.");
             var usage = await db.QuerySingleAsync(Sql("""
                 SELECT COUNT(*) uses,COALESCE(SUM(d.KhachHangID=@account),0) own FROM KhuyenMaiDonHang k
                 JOIN DonHang d ON d.DonHangID=k.DonHangID WHERE k.KhuyenMaiID=@KhuyenMaiID AND d.TrangThai<>'DA_HUY'
@@ -107,7 +108,14 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
             SELECT PhuongThucID FROM PhuongThucThanhToan WHERE MaPhuongThuc=@methodCode AND DangHoatDong=1
             """,new {methodCode})) ?? throw new CheckoutException("Phương thức thanh toán không hợp lệ.");
         var shipping = subtotal >= 1500000 ? 0 : 30000;
-        var total = subtotal - discount + shipping;
+        var don = new DonHang {
+            MaDonHang = place ? "SS-" + Guid.NewGuid().ToString("N") : "",
+            MaYeuCauTao = place ? Guid.Parse(input.RequestId!) : Guid.Empty, KhachHangID = account,
+            HoTenNguoiNhan = input.Name?.Trim() ?? "", SoDienThoaiNhan = input.Phone?.Trim() ?? "",
+            DiaChiNhan = input.Address?.Trim() ?? "", GhiChu = input.Note?.Trim() ?? "",
+            PhuongThucID = method, TienHang = subtotal, TienGiam = discount, PhiVanChuyen = shipping, TienTe = "VND"
+        };
+        var total = don.TinhTongThanhToan();
         var signature = JsonSerializer.SerializeToUtf8Bytes(new {
             items = lines.Select(x => new object[]{x.BienTheID,x.SoLuong,(double)x.Price}),
             promo = promo?.KhuyenMaiID, discount = (double)discount,shipping,method
@@ -122,14 +130,8 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
             throw new CheckoutException("Giỏ hàng, giá hoặc ưu đãi đã thay đổi.",409);
         if (string.IsNullOrWhiteSpace(input.Name) || string.IsNullOrWhiteSpace(input.Phone) || string.IsNullOrWhiteSpace(input.Address))
             throw new CheckoutException("Vui lòng nhập người nhận, số điện thoại và địa chỉ.");
-        await db.ExecuteAsync(Sql("""
-            INSERT INTO DonHang(MaDonHang,MaYeuCauTao,KhachHangID,HoTenNguoiNhan,SoDienThoaiNhan,DiaChiNhan,GhiChu,PhuongThucID,TienHang,TienGiam,PhiVanChuyen,HanThanhToan)
-            VALUES(@code,@RequestId,@account,@name,@phone,@address,@note,@method,@subtotal,@discount,@shipping,
-                   IF(@methodCode='BANK_TRANSFER',DATE_ADD(UTC_TIMESTAMP(),INTERVAL @minutes MINUTE),NULL))
-            """,new {code="SS-"+Guid.NewGuid().ToString("N"),input.RequestId,account,name=input.Name.Trim(),phone=input.Phone.Trim(),
-                    address=input.Address.Trim(),note=input.Note?.Trim()??"",method,subtotal,discount,shipping,methodCode,
-                    minutes=config.GetValue<int?>("PAYMENT_HOLD_MINUTES")??30}));
-        var id = await db.ExecuteScalarAsync<long>(Sql("SELECT LAST_INSERT_ID()"));
+        var minutes = methodCode == "BANK_TRANSFER" ? config.GetValue<int?>("PAYMENT_HOLD_MINUTES") ?? 30 : (int?)null;
+        var id = await orders.ThemDon(session,don,minutes);
         var remaining = discount;
         var remainingBase = eligible.Sum(x=>x.Value);
         foreach (var line in lines) {
@@ -139,18 +141,14 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
                 remaining -= reduction;
                 remainingBase -= line.Value;
             }
-            await db.ExecuteAsync(Sql("""
-                INSERT INTO ChiTietDonHang(DonHangID,BienTheID,MaSanPhamLucMua,SKULucMua,TenSanPhamLucMua,KichCoLucMua,MauSacLucMua,DanhMucLucMua,ThuongHieuLucMua,SoLuong,DonGia,TienGiamPhanBo)
-                VALUES(@id,@BienTheID,@MaSanPham,@SKU,@TenSanPham,@Size,@Color,@TenDanhMuc,@TenThuongHieu,@SoLuong,@Price,@reduction)
-                """,new {id,line.BienTheID,line.MaSanPham,line.SKU,line.TenSanPham,line.Size,line.Color,line.TenDanhMuc,line.TenThuongHieu,line.SoLuong,line.Price,reduction}));
-            var detail = await db.ExecuteScalarAsync<long>(Sql("SELECT LAST_INSERT_ID()"));
-            var args = new {detail,line.BienTheID,line.SoLuong,account,key=Guid.NewGuid().ToString()};
-            await db.ExecuteAsync(Sql("INSERT INTO PhanBoTonKho(ChiTietDonHangID,SoLuongGiu) VALUES(@detail,@SoLuong)",args));
-            await db.ExecuteAsync(Sql("UPDATE TonKho SET SoLuongDaPhanBo=SoLuongDaPhanBo+@SoLuong,NgayCapNhat=UTC_TIMESTAMP(),PhienBan=PhienBan+1 WHERE BienTheID=@BienTheID",args));
-            await db.ExecuteAsync(Sql("""
-                INSERT INTO BienDongKho(BienTheID,LoaiBienDong,ThayDoiTon,ThayDoiPhanBo,TonSau,PhanBoSau,ChiTietDonHangID,NguoiThucHienID,MaThaoTac,LyDo)
-                SELECT BienTheID,'GIU_HANG',0,@SoLuong,SoLuongTon,SoLuongDaPhanBo,@detail,@account,@key,'Phân bổ khi đặt hàng' FROM TonKho WHERE BienTheID=@BienTheID
-                """,args));
+            var detail = await orders.ThemDong(session,new ChiTietDonHang {
+                DonHangID = id, BienTheID = line.BienTheID, MaSanPhamLucMua = line.MaSanPham, SKULucMua = line.SKU,
+                TenSanPhamLucMua = line.TenSanPham, KichCoLucMua = line.Size, MauSacLucMua = line.Color,
+                DanhMucLucMua = line.TenDanhMuc, ThuongHieuLucMua = line.TenThuongHieu, SoLuong = line.SoLuong,
+                DonGia = line.Price, TienGiamPhanBo = reduction
+            });
+            await orders.ThemPhanBo(session,new PhanBoTonKho { ChiTietDonHangID = detail, SoLuongGiu = line.SoLuong });
+            await StockLedger.Change(session,account,line.BienTheID,"GIU_HANG",0,line.SoLuong,detail,null,"Phân bổ khi đặt hàng");
         }
         if (promo != null)
             await db.ExecuteAsync(Sql("""
@@ -158,8 +156,10 @@ public sealed class CheckoutControl(MySqlDataSource database,IConfiguration conf
                 VALUES(@id,@KhuyenMaiID,@MaKhuyenMai,@TenKhuyenMai,@HinhThuc,@GiaTri,@discount)
                 """,new {id,promo.KhuyenMaiID,promo.MaKhuyenMai,promo.TenKhuyenMai,promo.HinhThuc,promo.GiaTri,discount}));
         await db.ExecuteAsync(Sql("INSERT INTO LichSuDonHang(DonHangID,TrangThaiMoi,NguoiThucHienID,GhiChu) VALUES(@id,'CHO_XAC_NHAN',@account,'Khách tạo đơn')",new {id,account}));
-        await db.ExecuteAsync(Sql("INSERT INTO ThanhToan(DonHangID,PhuongThucID,MaYeuCau,SoTien) VALUES(@id,@method,@key,@total)",new {id,method,key=Guid.NewGuid().ToString(),total}));
-        await db.ExecuteAsync(Sql("DELETE FROM ChiTietGioHang WHERE GioHangID=@cart",new {cart}));
+        var thanhToan = new ThanhToan { DonHangID = id, PhuongThucID = method, MaYeuCau = Guid.NewGuid() };
+        thanhToan.DatSoTienChoThu(total);
+        await orders.ThemThanhToan(session,thanhToan);
+        await carts.LamTrong(session,cart);
         await tx.CommitAsync(token);
         return new {id,total};
     }

@@ -74,7 +74,7 @@ internal static class CatalogQueries
         """;
 
     internal const string LockProduct = """
-        SELECT MaSanPham code,TenSanPham name,MoTa description,GiaBan price,DanhMucID categoryId,ThuongHieuID brandId,TrangThai status FROM SanPham WHERE SanPhamID=? FOR UPDATE
+        SELECT * FROM SanPham WHERE SanPhamID=? FOR UPDATE
         """;
 
     internal const string LockImage = """
@@ -127,10 +127,6 @@ internal static class CatalogQueries
 
     internal const string SetVariantStatus = """
         UPDATE BienTheSanPham SET DangKinhDoanh=?,NgayCapNhat=UTC_TIMESTAMP() WHERE BienTheID=?
-        """;
-
-    internal const string LockVariantIdentity = """
-        SELECT SKU,DangKinhDoanh FROM BienTheSanPham WHERE BienTheID=? FOR UPDATE
         """;
 
     internal const string LockStock = """

@@ -2,13 +2,14 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using MySqlConnector;
+using ShopGiay.Entity;
 using ShopGiay.Infrastructure;
 using static ShopGiay.Infrastructure.ApiInput;
 using Q = ShopGiay.Infrastructure.CatalogQueries;
 
 namespace ShopGiay.Control;
 
-public sealed class CatalogManagement(Sql sql,ImageStore images)
+public sealed class CatalogManagement(Sql sql,ImageStore images,CatalogRepository catalog)
 {
     public Task<List<dynamic>> Products(CancellationToken token) => sql.Run(db => db.Rows(Q.Products),token);
     public Task<List<dynamic>> Variants(string? productId,CancellationToken token) =>
@@ -45,27 +46,20 @@ public sealed class CatalogManagement(Sql sql,ImageStore images)
         },token);
     }
 
-    private static decimal Price(object value)
-    {
-        var price = Number(value);
-        if (price <= 0 || price > 10000000000m) throw new ApiException("Giá tiền không hợp lệ.");
-        return Math.Round(price,MidpointRounding.AwayFromZero);
-    }
+    // Kiểm tra giá nhập rồi làm tròn theo đơn vị VNĐ trước khi lưu.
+    private static decimal Price(object value) => SanPham.ChuanHoaGia(Number(value));
 
-    private static string ProductStatus(string value) => value switch {
-        "NHAP" => "AN",
-        "AN" or "DANG_BAN" or "NGUNG_BAN" => value,
-        _ => throw new ApiException("Trạng thái sản phẩm không hợp lệ.")
-    };
-
+    // Dựng sản phẩm, kiểm tra trạng thái, lưu rồi thêm ảnh và nhật ký.
     public async Task<object> CreateProduct(long actor,JsonElement body,Upload? image,CancellationToken token)
     {
         var name = body.Required("name","tên sản phẩm",250);
         return await ProductWrite(() => images.WithUpload("products",image,save => sql.Transaction<object>(async db => {
             var url = ImageStore.Url(body.Text("image",1001),true);
-            var id = await db.Insert(Q.InsertProduct,body.Required("code","mã sản phẩm",50),name,body.Text("description",8000),
-                Price(body.Field("price")),Id(body.Field("categoryId")),Id(body.Field("brandId")),
-                ProductStatus(body.Text("status").NullIfEmpty() ?? "DANG_BAN"),actor);
+            var product = new SanPham { NguoiTaoID = actor };
+            product.CapNhatThongTin(body.Required("code","mã sản phẩm",50),name,body.Text("description",8000),
+                Price(body.Field("price")),(int)Id(body.Field("categoryId")),(int)Id(body.Field("brandId")));
+            product.DatTrangThai(body.Text("status").NullIfEmpty() ?? "DANG_BAN");
+            var id = await catalog.ThemSanPham(db,product);
             if (image is not null) url = "/api/product-images/" + await save();
             if (url.Length > 0) await db.Execute(Q.InsertImage,id,url);
             await db.Audit(actor,"TAO_SAN_PHAM","SanPham",id,name);
@@ -73,25 +67,29 @@ public sealed class CatalogManagement(Sql sql,ImageStore images)
         },token),token));
     }
 
+    // Khóa sản phẩm, hợp nhất dữ liệu mới, lưu qua Entity rồi dọn ảnh cũ sau khi commit.
     public async Task<object> UpdateProduct(long id,long actor,JsonElement body,Upload? image,CancellationToken token)
     {
         string? replaced = null;
         var result = await ProductWrite(() => images.WithUpload("products",image,save => sql.Transaction(async db => {
-            var p = await db.One(Q.LockProduct,id) as IDictionary<string,object?> ?? throw new ApiException("Không tìm thấy sản phẩm.",404);
+            var p = await catalog.KhoaSanPham(db,id) ?? throw new ApiException("Không tìm thấy sản phẩm.",404);
             var photo = await db.One(Q.LockImage,id);
             string original = photo is null ? "" : (string)photo.image;
-            object? Field(string key) => body.TryGetProperty(key,out var value) ? value : p[key];
-            var status = ProductStatus(Clean(Field("status")));
+            // Giữ dữ liệu đang lưu nếu yêu cầu chỉ cập nhật một phần sản phẩm.
+            object? Field(string key,object? current) => body.TryGetProperty(key,out var value) ? value : current;
+            p.DatTrangThai(Clean(Field("status",p.TrangThai)));
             var remove = body.Text("removeImage").Equals("true",StringComparison.OrdinalIgnoreCase);
             var url = remove ? "" : body.TryGetProperty("image",out _) ? ImageStore.Url(body.Text("image",1001),true) : original;
-            var changed = image is not null || url != original ||
-                new[] {"code","name","description","price","categoryId","brandId"}.Any(k => body.TryGetProperty(k,out _) && Clean(Field(k)) != Clean(p[k]));
-            var name = Clean(Field("name"),250);
+            (string Key,object? Value)[] fields = [("code",p.MaSanPham),("name",p.TenSanPham),("description",p.MoTa),
+                ("price",p.GiaBan),("categoryId",p.DanhMucID),("brandId",p.ThuongHieuID)];
+            var changed = image is not null || url != original || fields.Any(f => Clean(Field(f.Key,f.Value)) != Clean(f.Value));
+            var name = Clean(Field("name",p.TenSanPham),250);
             if (changed) {
-                var code = Clean(Field("code"),50);
+                var code = Clean(Field("code",p.MaSanPham),50);
                 if (code == "" || name == "") throw new ApiException("Vui lòng nhập mã sản phẩm và tên.");
-                await db.Execute(Q.UpdateProduct,code,name,Clean(Field("description"),8000),Price(Field("price")!),
-                    Id(Field("categoryId")),Id(Field("brandId")),id);
+                p.CapNhatThongTin(code,name,Clean(Field("description",p.MoTa),8000),Price(Field("price",p.GiaBan)!),
+                    (int)Id(Field("categoryId",p.DanhMucID)),(int)Id(Field("brandId",p.ThuongHieuID)));
+                await catalog.LuuThongTin(db,p);
                 if (image is not null) url = "/api/product-images/" + await save();
                 if (url != original) {
                     if (photo is not null && photo.variant is null) {
@@ -104,7 +102,7 @@ public sealed class CatalogManagement(Sql sql,ImageStore images)
                     }
                 }
             }
-            await db.Execute(Q.SetProductStatus,status,id);
+            await catalog.LuuTrangThai(db,p);
             await db.Audit(actor,"SUA_SAN_PHAM","SanPham",id,name);
             return Ok;
         },token),token));
@@ -112,6 +110,7 @@ public sealed class CatalogManagement(Sql sql,ImageStore images)
         return result;
     }
 
+    // Dịch lỗi trùng mã sản phẩm từ MySQL để giao diện báo đúng trường.
     private static async Task<object> ProductWrite(Func<Task<object>> write)
     {
         try { return await write(); }
@@ -120,6 +119,7 @@ public sealed class CatalogManagement(Sql sql,ImageStore images)
         }
     }
 
+    // Dịch lỗi trùng SKU hoặc trùng tổ hợp size và màu.
     private static async Task<object> VariantWrite(Func<Task<object>> write)
     {
         try { return await write(); }
@@ -128,58 +128,67 @@ public sealed class CatalogManagement(Sql sql,ImageStore images)
         }
     }
 
+    // Giá bỏ trống hoặc bằng 0 dùng giá của sản phẩm.
     private static decimal? VariantPrice(JsonElement body) => body.Text("price") is "" or "0" ? null : Price(body.Field("price"));
 
+    // Dựng biến thể, lưu tổ hợp size và màu, sau đó tạo dòng tồn và nhật ký.
     public Task<object> CreateVariant(long actor,JsonElement body,CancellationToken token) => VariantWrite(() =>
         sql.Transaction<object>(async db => {
             var sku = body.Required("sku","SKU",80);
-            var id = await db.Insert(Q.InsertVariant,Id(body.Field("productId")),sku,Id(body.Field("sizeId")),Id(body.Field("colorId")),VariantPrice(body));
+            var variant = new BienTheSanPham { SanPhamID = Id(body.Field("productId")), SKU = sku };
+            variant.CapNhatThongTin((int)Id(body.Field("sizeId")),(int)Id(body.Field("colorId")),VariantPrice(body),false);
+            var id = await catalog.ThemBienThe(db,variant);
             await db.Execute(Q.CreateStock,id);
             await db.Audit(actor,"TAO_BIEN_THE","BienTheSanPham",id,sku);
             return new { id };
         },token));
 
+    // Khóa biến thể, kiểm tra điều kiện sửa và giao dịch cũ rồi lưu giá, size, màu và trạng thái bán.
     public Task<object> UpdateVariant(long id,long actor,JsonElement body,CancellationToken token) => VariantWrite(() =>
         sql.Transaction(async db => {
-            var old = await db.One(Q.LockVariant,id) ?? throw new ApiException("Không tìm thấy biến thể.",404);
+            var old = await catalog.KhoaBienThe(db,id) ?? throw new ApiException("Không tìm thấy biến thể.",404);
             var active = body.Field("active").ValueKind switch {
                 JsonValueKind.True => 1, JsonValueKind.False => 0, _ => Integer(body.Field("active"),0,1,"Trạng thái không hợp lệ.")
             };
-            if (Convert.ToBoolean(old.DangKinhDoanh) && new[] {"sizeId","colorId","price","sku"}.Any(k=>body.TryGetProperty(k,out _)))
+            if (old.DangKinhDoanh && new[] {"sizeId","colorId","price","sku"}.Any(k=>body.TryGetProperty(k,out _)))
                 throw new ApiException("Hãy ẩn biến thể trước khi sửa.",409);
             if (body.Text("sizeId").Length > 0 && body.Text("colorId").Length > 0) {
                 var size = Id(body.Field("sizeId"));
                 var color = Id(body.Field("colorId"));
-                if (await db.Value<long>(Q.CountVariantOrders,id) > 0 && (size != (int)old.KichCoID || color != (int)old.MauSacID))
-                    throw new ApiException("Biến thể đã giao dịch không được đổi size/màu. Hãy tạo biến thể mới.");
-                await db.Execute(Q.UpdateVariant,size,color,VariantPrice(body),id);
+                var daGiaoDich = await db.Value<long>(Q.CountVariantOrders,id) > 0;
+                old.CapNhatThongTin((int)size,(int)color,VariantPrice(body),daGiaoDich);
+                await catalog.LuuThongTin(db,old);
             }
-            await db.Execute(Q.SetVariantStatus,active,id);
+            old.DatKinhDoanh(active == 1);
+            await catalog.LuuTrangThai(db,old);
             await db.Audit(actor,"AN_HIEN_BIEN_THE","BienTheSanPham",id,active == 0 ? "false" : "true");
             return Ok;
         },token));
 
+    // Chỉ xóa biến thể đã ẩn và đủ điều kiện về tồn, rồi ghi nhật ký.
     public Task<object> DeleteVariant(long id,long actor,CancellationToken token) =>
         sql.Transaction(async db => {
-            var variant = await db.One(Q.LockVariantIdentity,id) ?? throw new ApiException("Không tìm thấy biến thể.",404);
-            if (Convert.ToBoolean(variant.DangKinhDoanh)) throw new ApiException("Hãy ẩn biến thể trước khi xóa.",409);
+            var variant = await catalog.KhoaBienThe(db,id) ?? throw new ApiException("Không tìm thấy biến thể.",404);
+            if (variant.DangKinhDoanh) throw new ApiException("Hãy ẩn biến thể trước khi xóa.",409);
             var stock = await db.One(Q.LockStock,id);
             if (stock is not null && ((int)stock.SoLuongTon != 0 || (int)stock.SoLuongDaPhanBo != 0))
                 throw new ApiException("Biến thể còn tồn kho hoặc đang giữ hàng.",409);
             await db.Execute(Q.RemoveStock,id);
             await db.Execute(Q.RemoveVariant,id);
-            await db.Audit(actor,"XOA_BIEN_THE","BienTheSanPham",id,(string)variant.SKU);
+            await db.Audit(actor,"XOA_BIEN_THE","BienTheSanPham",id,variant.SKU);
             return Ok;
         },token);
 
-    private static (string Table,string Column,string Name) Taxonomy(string key) => key switch {
-        "categories" => ("DanhMuc","DanhMucID","TenDanhMuc"), "brands" => ("ThuongHieu","ThuongHieuID","TenThuongHieu"),
+    // Chỉ ánh xạ các nhóm phân loại được phép truy cập.
+    private static (string Table,string Column) Taxonomy(string key) => key switch {
+        "categories" => ("DanhMuc","DanhMucID"), "brands" => ("ThuongHieu","ThuongHieuID"),
         _ => throw new ApiException("Không tìm thấy mục.",404)
     };
 
+    // Chuẩn hóa trạng thái, tạo hoặc cập nhật Entity phân loại rồi ghi nhật ký.
     public Task<object> SaveTaxonomy(string key,long? id,long actor,JsonElement body,CancellationToken token)
     {
-        var (table,column,nameColumn) = Taxonomy(key);
+        var (table,_) = Taxonomy(key);
         var name = body.Required("name","tên");
         var status = body.Text("status").NullIfEmpty() ?? (body.IsSet("active")
             ? body.Text("active") is "true" or "True" or "1" ? "HOAT_DONG" : "AN"
@@ -187,23 +196,27 @@ public sealed class CatalogManagement(Sql sql,ImageStore images)
         if (status is not ("NHAP" or "HOAT_DONG" or "AN")) throw new ApiException("Trạng thái không hợp lệ.");
         var active = status == "HOAT_DONG";
         return sql.Transaction<object>(async db => {
-            if (id is null) {
-                var created = await db.Insert($"INSERT INTO {table}({nameColumn},MoTa,DangHoatDong,LaBanNhap) VALUES(?,?,?,?)",
-                    name,body.Text("description"),active,!active);
-                await db.Audit(actor,"TAO_DANH_MUC",table,created,name);
-                return new { id = created };
+            var description = body.Text("description");
+            long saved;
+            if (key == "categories") {
+                var category = new DanhMuc { DanhMucID = (int)(id ?? 0), MoTa = description };
+                category.CapNhat(name,active);
+                saved = await catalog.LuuDanhMuc(db,category);
+            } else {
+                var brand = new ThuongHieu { ThuongHieuID = (int)(id ?? 0), MoTa = description };
+                brand.CapNhat(name,active);
+                saved = await catalog.LuuThuongHieu(db,brand);
             }
-            await db.Execute($"UPDATE {table} SET {nameColumn}=?,DangHoatDong=?,LaBanNhap=?,NgayCapNhat=UTC_TIMESTAMP() WHERE {column}=?",
-                name,active,!active,id);
-            await db.Audit(actor,"SUA_DANH_MUC",table,id.Value,name);
-            return Ok;
+            await db.Audit(actor,id is null ? "TAO_DANH_MUC" : "SUA_DANH_MUC",table,saved,name);
+            return id is null ? new { id = saved } : Ok;
         },token);
     }
 
+    // Kiểm tra trạng thái ẩn và điều kiện tồn trước khi xóa dữ liệu, sau đó dọn ảnh.
     public async Task<object> DeleteItem(string key,long id,long actor,CancellationToken token)
     {
         var product = key == "products";
-        var (table,column,_) = product ? ("SanPham","SanPhamID","TenSanPham") : Taxonomy(key);
+        var (table,column) = product ? ("SanPham","SanPhamID") : Taxonomy(key);
         var flag = product ? "TrangThai='AN'" : "DangHoatDong=0";
         var urls = await sql.Transaction(async db => {
             var hidden = await db.Value<int?>($"SELECT ({flag}) FROM {table} WHERE {column}=? FOR UPDATE",id);

@@ -38,10 +38,6 @@ internal static class ReturnQueries
                 {slot0}
         """;
 
-    internal const string LinkReplacement = """
-        UPDATE YeuCauDoiTra SET DonHangDoiMoiID=? WHERE YeuCauDoiTraID=?
-        """;
-
     internal const string RequestedQuantity = """
         SELECT COALESCE(SUM(ct.SoLuongYeuCau),0) n FROM ChiTietDoiTra ct JOIN YeuCauDoiTra y ON y.YeuCauDoiTraID=ct.YeuCauDoiTraID WHERE ct.ChiTietDonHangID=? AND y.TrangThai NOT IN ('TU_CHOI','DA_HUY')
         """;
@@ -107,7 +103,7 @@ internal static class ReturnQueries
         """;
 
     internal const string LockLines = """
-        SELECT c.*,ct.BienTheID,ct.MaSanPhamLucMua,ct.TenSanPhamLucMua,ct.DanhMucLucMua,ct.ThuongHieuLucMua,ct.DonGia,ct.SoLuong bought,ct.ThanhTien paid FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=? FOR UPDATE
+        SELECT c.*,ct.BienTheID,ct.MaSanPhamLucMua,ct.TenSanPhamLucMua,ct.DanhMucLucMua,ct.ThuongHieuLucMua,ct.DonGia,ct.SoLuong SoLuongLucMua,ct.ThanhTien ThanhTienLucMua FROM ChiTietDoiTra c JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=c.ChiTietDonHangID WHERE c.YeuCauDoiTraID=? FOR UPDATE
         """;
 
     internal const string ApprovedReturnShares = """
@@ -115,18 +111,6 @@ internal static class ReturnQueries
               FROM ChiTietDoiTra c JOIN YeuCauDoiTra y ON y.YeuCauDoiTraID=c.YeuCauDoiTraID
               WHERE c.ChiTietDonHangID=? AND c.YeuCauDoiTraID<>?
               AND y.LoaiYeuCau='TRA' AND y.TrangThai NOT IN ('DA_HUY','TU_CHOI')
-        """;
-
-    internal const string ApproveLine = """
-        UPDATE ChiTietDoiTra SET SoLuongDuyet=SoLuongYeuCau,TienHoanDuocDuyet=? WHERE ChiTietDoiTraID=?
-        """;
-
-    internal const string RecordDecision = """
-        UPDATE YeuCauDoiTra SET NguoiDuyetID=?,NgayDuyet=UTC_TIMESTAMP(),LyDoXuLy=? WHERE YeuCauDoiTraID=?
-        """;
-
-    internal const string ReceiveLine = """
-        UPDATE ChiTietDoiTra SET SoLuongDaNhan=SoLuongDuyet,SoLuongBanLai=?,NguoiNhanHangID=?,NgayNhanHang=UTC_TIMESTAMP(),TinhTrangHang=? WHERE ChiTietDoiTraID=?
         """;
 
     internal const string CreateReceipt = """
@@ -149,14 +133,6 @@ internal static class ReturnQueries
         SELECT COALESCE(SUM(SoTien),0) refunded FROM HoanTien WHERE YeuCauDoiTraID=? AND TrangThai='DA_XAC_NHAN'
         """;
 
-    internal const string MarkComplete = """
-        UPDATE YeuCauDoiTra SET NgayHoanTat=UTC_TIMESTAMP() WHERE YeuCauDoiTraID=?
-        """;
-
-    internal const string SetStatus = """
-        UPDATE YeuCauDoiTra SET TrangThai=? WHERE YeuCauDoiTraID=?
-        """;
-
     internal const string RecordHistory = """
         INSERT INTO LichSuDoiTra(YeuCauDoiTraID,TrangThaiCu,TrangThaiMoi,NguoiThucHienID,NoiDung) VALUES(?,?,?,?,?)
         """;
@@ -169,23 +145,8 @@ internal static class ReturnQueries
         SELECT * FROM HoanTien WHERE HoanTienID=? FOR UPDATE
         """;
 
-    internal const string LockPayment = """
-        SELECT * FROM ThanhToan WHERE ThanhToanID=? FOR UPDATE
-        """;
-
     internal const string RefundedForPayment = """
         SELECT COALESCE(SUM(SoTien),0) returned FROM HoanTien WHERE ThanhToanID=? AND TrangThai='DA_XAC_NHAN'
         """;
 
-    internal const string ConfirmRefund = """
-        UPDATE HoanTien SET TrangThai='DA_XAC_NHAN',NgayXacNhan=UTC_TIMESTAMP(),NguoiXuLyID=?,BangChung=? WHERE HoanTienID=?
-        """;
-
-    internal const string RetryRefund = """
-        UPDATE HoanTien SET TrangThai='CHO_XU_LY' WHERE HoanTienID=?
-        """;
-
-    internal const string FailRefund = """
-        UPDATE HoanTien SET TrangThai='THAT_BAI' WHERE HoanTienID=?
-        """;
 }

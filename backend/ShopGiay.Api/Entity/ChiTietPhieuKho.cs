@@ -9,4 +9,5 @@ public sealed class ChiTietPhieuKho
     public decimal? DonGiaNhap { get; init; }
     public long? ChiTietDoiTraID { get; init; }
     public string? GhiChu { get; init; }
+    public int? TonSoSach { get; init; }
 }

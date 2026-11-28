@@ -11,7 +11,10 @@ Cài .NET 10 SDK, Node.js 22.12 trở lên và MySQL 8.0.16 trở lên. Trong Po
 | `frontend/` | React và Vite, trang HTML, CSS và ảnh công khai. |
 | `backend/ShopGiay.Api/Boundary/` | Điểm vào HTTP, kiểm tra đầu vào và trả JSON. |
 | `backend/ShopGiay.Api/Control/` | Điều phối ca sử dụng, xác định phiên và thực hiện giao dịch MySQL. |
-| `backend/ShopGiay.Api/Entity/` | 37 lớp dữ liệu theo tài liệu Class Diagram. Ví dụ, lớp TonKho kiểm tra lượng khả dụng trước khi cập nhật giỏ. |
+| `backend/ShopGiay.Api/Entity/` | Trạng thái và quy tắc của các lớp nghiệp vụ trong Class Diagram. |
+| `backend/ShopGiay.Api/Infrastructure/Repositories/` | Đọc MySQL bằng Dapper thành các đối tượng có kiểu và lưu thay đổi trong giao dịch của Control. |
+
+Với thao tác ghi, Boundary gọi Control. Control dùng Repository để tải Entity, gọi quy tắc trên đối tượng rồi lưu trạng thái và lịch sử liên quan. Ví dụ, `OrderControl` khóa đơn qua `OrderRepository`, gọi `DonHang.HuyDon()` và giải phóng tồn đã giữ trong cùng giao dịch. Các truy vấn chỉ đọc có thể trả dữ liệu hiển thị trực tiếp. Phương thức tham gia luồng có ghi chú `//` bằng tiếng Việt về nhiệm vụ, thứ tự xử lý và các điều kiện cần chú ý.
 
 Khi phát triển, Vite chạy độc lập trên `PORT` (mặc định 5173) và chuyển yêu cầu `/api` đến ASP.NET Core ở `API_PORT` (mặc định 5174). Trong production, ASP.NET Core phục vụ cả API và giao diện đã build trong `frontend/dist` trên `PORT`. Tác vụ .NET kiểm tra đơn hết hạn thanh toán mỗi 15 giây.
 
@@ -198,7 +201,7 @@ Shop-giay/
   database/schema.sql   Đủ 37 bảng MySQL, không có DROP
   backend/ShopGiay.Api/Infrastructure/DatabaseMaintenance.cs  Khởi tạo và nâng cấp schema
   backend/ShopGiay.Api/Infrastructure/DatabaseSeed.cs         Nạp dữ liệu mẫu
-  scripts/start-system.js  Launcher cho .NET, Vite và lệnh bảo trì
+  frontend/scripts/start-system.js  Launcher cho .NET, Vite và lệnh bảo trì
   tests/                Kiểm thử tích hợp API và MySQL
   frontend/public/images/        Ảnh minh họa cục bộ
   .env.example          Mẫu cấu hình không chứa mật khẩu thật

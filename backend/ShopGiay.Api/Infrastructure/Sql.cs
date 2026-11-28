@@ -43,8 +43,16 @@ public sealed class SqlSession(DbConnection connection,DbTransaction? transactio
     public async Task<List<dynamic>> Rows(string sql,params object?[] values) =>
         (await connection.QueryAsync(Command(sql,values))).AsList();
 
+    // Đọc nhiều bản ghi và ánh xạ sang kiểu dữ liệu mà repository yêu cầu.
+    public async Task<List<T>> Rows<T>(string sql,params object?[] values) =>
+        (await connection.QueryAsync<T>(Command(sql,values))).AsList();
+
     public async Task<dynamic?> One(string sql,params object?[] values) =>
         await connection.QueryFirstOrDefaultAsync(Command(sql,values));
+
+    // Đọc tối đa một bản ghi và trả về đối tượng C# có kiểu.
+    public Task<T?> One<T>(string sql,params object?[] values) =>
+        connection.QueryFirstOrDefaultAsync<T>(Command(sql,values));
 
     public async Task<T?> Value<T>(string sql,params object?[] values) =>
         await connection.ExecuteScalarAsync<T>(Command(sql,values));

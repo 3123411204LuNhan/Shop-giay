@@ -45,14 +45,6 @@ internal static class InventoryQueries
         SELECT SoLuongTon stock FROM TonKho WHERE BienTheID=? FOR UPDATE
         """;
 
-    internal const string ConfirmReceipt = """
-        UPDATE PhieuKho SET TrangThai='DA_XAC_NHAN',NgayXacNhan=UTC_TIMESTAMP(),NguoiXacNhanID=? WHERE PhieuKhoID=?
-        """;
-
-    internal const string CancelReceipt = """
-        UPDATE PhieuKho SET TrangThai='DA_HUY' WHERE PhieuKhoID=?
-        """;
-
     internal const string SetThreshold = """
         UPDATE TonKho SET MucCanhBao=? WHERE BienTheID=?
         """;

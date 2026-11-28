@@ -35,16 +35,8 @@ internal static class OrderQueries
         SELECT p.*,ct.BienTheID FROM PhanBoTonKho p JOIN ChiTietDonHang ct ON ct.ChiTietDonHangID=p.ChiTietDonHangID WHERE ct.DonHangID=? AND p.TrangThai='DANG_GIU' ORDER BY ct.BienTheID FOR UPDATE
         """;
 
-    internal const string ReleaseAllocation = """
-        UPDATE PhanBoTonKho SET TrangThai='DA_GIAI_PHONG',NgayKetThuc=UTC_TIMESTAMP() WHERE ChiTietDonHangID=?
-        """;
-
     internal const string CancelOrder = """
-        UPDATE DonHang SET TrangThai='DA_HUY',NgayHuy=UTC_TIMESTAMP(),NguoiHuyID=?,LyDoHuy=?,PhienBan=PhienBan+1 WHERE DonHangID=?
-        """;
-
-    internal const string RecordCancellation = """
-        INSERT INTO LichSuDonHang(DonHangID,TrangThaiCu,TrangThaiMoi,NguoiThucHienID,GhiChu) VALUES(?,?,'DA_HUY',?,?)
+        UPDATE DonHang SET TrangThai=?,NgayHuy=?,NguoiHuyID=?,LyDoHuy=?,PhienBan=PhienBan+1 WHERE DonHangID=?
         """;
 
     internal const string CancelPendingPayments = """
@@ -83,18 +75,6 @@ internal static class OrderQueries
         UPDATE DonHang SET TrangThaiGiaoHang='DA_GIAO' WHERE DonHangID=?
         """;
 
-    internal const string HeldItems = """
-        SELECT ct.*,p.SoLuongGiu FROM ChiTietDonHang ct JOIN PhanBoTonKho p ON p.ChiTietDonHangID=ct.ChiTietDonHangID WHERE ct.DonHangID=? AND p.TrangThai='DANG_GIU' ORDER BY ct.BienTheID FOR UPDATE
-        """;
-
-    internal const string ReleaseShipped = """
-        UPDATE PhanBoTonKho SET TrangThai='DA_XUAT',NgayKetThuc=UTC_TIMESTAMP() WHERE ChiTietDonHangID=?
-        """;
-
-    internal const string UpdateStatus = """
-        UPDATE DonHang SET TrangThai=?,NgayGiao=IF(?='DA_GIAO',UTC_TIMESTAMP(),NgayGiao),NgayHoanThanh=IF(?='HOAN_THANH',UTC_TIMESTAMP(),NgayHoanThanh),PhienBan=PhienBan+1 WHERE DonHangID=?
-        """;
-
     internal const string AppendHistory = """
         INSERT INTO LichSuDonHang(DonHangID,TrangThaiCu,TrangThaiMoi,NguoiThucHienID,GhiChu) VALUES(?,?,?,?,?)
         """;
@@ -109,10 +89,6 @@ internal static class OrderQueries
 
     internal const string LockPayment = """
         SELECT * FROM ThanhToan WHERE ThanhToanID=? FOR UPDATE
-        """;
-
-    internal const string ConfirmPayment = """
-        UPDATE ThanhToan SET TrangThai='DA_XAC_NHAN',NgayXacNhan=UTC_TIMESTAMP(),NguoiXacNhanID=?,BangChung=? WHERE ThanhToanID=?
         """;
 
     internal const string ClearDeadline = """
@@ -139,23 +115,16 @@ internal static class OrderQueries
         INSERT INTO ChiTietPhieuKho(PhieuKhoID,BienTheID,SoLuongThayDoi,GhiChu) VALUES(?,?,?,?)
         """;
 
-    internal const string CancelReturnedOrder = """
-        UPDATE DonHang SET TrangThai='DA_HUY',TrangThaiGiaoHang='DA_NHAN_HOAN',NgayHuy=UTC_TIMESTAMP(),NguoiHuyID=?,LyDoHuy=?,PhienBan=PhienBan+1 WHERE DonHangID=?
-        """;
-
     internal const string RecordReturn = """
         INSERT INTO LichSuDonHang(DonHangID,TrangThaiCu,TrangThaiMoi,NguoiThucHienID,GhiChu) VALUES(?,'DANG_GIAO','DA_HUY',?,?)
         """;
 
     internal const string LockLateOrder = """
-        SELECT d.*,p.MaPhuongThuc method FROM DonHang d JOIN PhuongThucThanhToan p ON p.PhuongThucID=d.PhuongThucID WHERE d.DonHangID=? FOR UPDATE
+        SELECT d.*,p.MaPhuongThuc FROM DonHang d JOIN PhuongThucThanhToan p ON p.PhuongThucID=d.PhuongThucID WHERE d.DonHangID=? FOR UPDATE
         """;
 
     internal const string LockLatestPayment = """
         SELECT * FROM ThanhToan WHERE DonHangID=? ORDER BY ThanhToanID LIMIT 1 FOR UPDATE
         """;
 
-    internal const string ConfirmLatePayment = """
-        UPDATE ThanhToan SET TrangThai='DA_XAC_NHAN',SoTien=?,NgayXacNhan=UTC_TIMESTAMP(),NguoiXacNhanID=?,BangChung=? WHERE ThanhToanID=?
-        """;
 }

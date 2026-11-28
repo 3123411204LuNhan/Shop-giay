@@ -10,12 +10,14 @@ namespace ShopGiay.Boundary;
 [Route("api")]
 public sealed class ReturnController(ReturnControl returns,SessionControl session,ImageStore images) : ControllerBase
 {
+    // Lấy khách từ phiên rồi chuyển nội dung đánh giá của dòng đơn cho Control.
     [HttpPost("reviews")]
     public Task<object> Review(JsonElement body,CancellationToken token) => returns.Review(session.Require("customer").Id,body,token);
 
     [HttpGet("returns")]
     public Task<List<dynamic>> Mine(CancellationToken token) => returns.List(session.Require("customer").Id,token);
 
+    // Kiểm tra phiên khách, đọc biểu mẫu và ảnh bằng chứng rồi gửi yêu cầu đổi trả.
     [HttpPost("returns")]
     [RequestSizeLimit(5 * 1024 * 1024 + 64 * 1024)]
     public async Task<object> Create(CancellationToken token)
@@ -63,6 +65,7 @@ public sealed class ReturnController(ReturnControl returns,SessionControl sessio
         return PhysicalFile(file.Path,file.ContentType);
     }
 
+    // Chuyển quyết định hoặc kết quả nhận hàng của người quản lý cho Control.
     [HttpPost("manage/returns/{id}/action")]
     public Task<object> Process(string id,JsonElement body,CancellationToken token) => returns.Process(Id(id),session.Require("manager").Id,body,token);
 
@@ -73,6 +76,7 @@ public sealed class ReturnController(ReturnControl returns,SessionControl sessio
         return returns.Refunds(token);
     }
 
+    // Chỉ nhận thao tác hoàn tiền được hỗ trợ và chuyển bằng chứng hoặc lý do cho Control.
     [HttpPost("manage/refunds/{id}/{operation:regex(^(confirm|retry|failure)$)}")]
     public Task<object> Refund(string id,string operation,JsonElement body,CancellationToken token) =>
         returns.Refund(Id(id),session.Require("manager").Id,operation,body,token);

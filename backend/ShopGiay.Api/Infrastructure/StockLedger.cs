@@ -1,25 +1,20 @@
-using ShopGiay.Entity;
-
 namespace ShopGiay.Infrastructure;
 
 public static class StockLedger
 {
+    // Khóa số dư, áp dụng quy tắc của TonKho, lưu giá trị mới rồi ghi một dòng sổ kho.
     public static async Task Change(SqlSession db,long? actor,long variant,string type,int physical,int reserved,long? detail,long? receipt,string reason)
     {
-        var row = await db.One("SELECT SoLuongTon,SoLuongDaPhanBo FROM TonKho WHERE BienTheID=? FOR UPDATE",variant);
-        if (row is null) throw new ApiException("Không tìm thấy tồn kho.",404);
-        var stock = (int)row.SoLuongTon + physical;
-        var held = (int)row.SoLuongDaPhanBo + reserved;
-        if (held < 0 || stock < held) throw new ApiException("Không đủ tồn khả dụng hoặc số phân bổ không hợp lệ.");
-        var balance = new TonKho(stock,held);
-        await db.Execute("UPDATE TonKho SET SoLuongTon=?,SoLuongDaPhanBo=?,NgayCapNhat=UTC_TIMESTAMP(),PhienBan=PhienBan+1 WHERE BienTheID=?",
-            balance.SoLuongTon,balance.SoLuongDaPhanBo,variant);
+        var balance = await InventoryRepository.KhoaTon(db,variant) ?? throw new ApiException("Không tìm thấy tồn kho.",404);
+        if (!balance.ApDungBienDong(physical,reserved)) throw new ApiException("Không đủ tồn khả dụng hoặc số phân bổ không hợp lệ.");
+        await InventoryRepository.LuuTon(db,variant,balance);
         await db.Execute("""
             INSERT INTO BienDongKho(BienTheID,LoaiBienDong,ThayDoiTon,ThayDoiPhanBo,TonSau,PhanBoSau,ChiTietDonHangID,ChiTietPhieuKhoID,NguoiThucHienID,MaThaoTac,LyDo)
             VALUES(?,?,?,?,?,?,?,?,?,?,?)
-            """,variant,type,physical,reserved,stock,held,detail,receipt,actor,Guid.NewGuid().ToString(),reason);
+            """,variant,type,physical,reserved,balance.SoLuongTon,balance.SoLuongDaPhanBo,detail,receipt,actor,Guid.NewGuid().ToString(),reason);
     }
 
+    // Trừ các khoản đã dành để hoàn rồi tạo khoản hoàn còn thiếu từ giao dịch đã thu.
     public static async Task ReserveRefunds(SqlSession db,long order,string reason,long? request = null)
     {
         var remaining = request is null ? decimal.MaxValue :

@@ -150,7 +150,24 @@ test('ASP.NET Core + MySQL: phân quyền, mua hàng, kho, hoàn tiền và qu�
   await t.test('Không thể nhảy trạng thái hoặc xem đơn người khác',async()=>{assert.equal((await manager.call('/manage/orders/'+id+'/status',{status:'HOAN_THANH'})).status,400);const other=new Client();await other.ok('/auth/register',{email:randomUUID()+'@example.test',name:'QA khác',password:randomUUID()});assert.equal((await other.call('/orders/'+id)).status,403);});
   await t.test('Xác nhận thu một lần, xuất kho và hoàn thành',async()=>{let o=await manager.ok('/orders/'+id);await manager.ok('/manage/payments/'+o.payments[0].id+'/confirm',{proof:'QA giao dịch chuyển khoản mô phỏng'});await manager.ok('/manage/payments/'+o.payments[0].id+'/confirm',{proof:'QA retry'});for(const status of ['DA_XAC_NHAN','DANG_CHUAN_BI','DANG_GIAO','DA_GIAO','HOAN_THANH'])await manager.ok('/manage/orders/'+id+'/status',{status});o=await customer.ok('/orders/'+id);assert.equal(o.status,'HOAN_THANH');assert.equal(o.paid,o.total);const [stock]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);assert.equal(stock.SoLuongTon,before.SoLuongTon-1);assert.equal(stock.SoLuongDaPhanBo,before.SoLuongDaPhanBo);await customer.ok('/reviews',{itemId:o.items[0].id,stars:4,content:'Kiểm thử luồng mua hàng thành công.'});assert.equal((await customer.call('/reviews',{itemId:o.items[0].id,stars:5})).status,409);});
   await t.test('Trả hàng, nhận kho một lần và hoàn tiền có bằng chứng',async()=>{const o=await customer.ok('/orders/'+id);await customer.ok('/returns',{itemId:o.items[0].id,quantity:1,type:'TRA',reason:'QA trả hàng mô phỏng'});const ret=(await customer.ok('/returns'))[0];await manager.ok('/manage/returns/'+ret.id+'/action',{action:'approve',reason:'QA đủ điều kiện'});await manager.ok('/manage/returns/'+ret.id+'/action',{action:'receive',sellable:true,reason:'QA hàng đạt'});assert.equal((await manager.call('/manage/returns/'+ret.id+'/action',{action:'receive',sellable:true})).status,400);const refunds=await manager.ok('/manage/refunds');const refund=refunds.find(x=>x.code===o.code);assert.ok(refund);await manager.ok('/manage/refunds/'+refund.id+'/confirm',{proof:'QA bằng chứng hoàn mô phỏng'});await manager.ok('/manage/returns/'+ret.id+'/action',{action:'complete'});const [stock]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);assert.equal(stock.SoLuongTon,before.SoLuongTon);assert.equal(stock.SoLuongDaPhanBo,before.SoLuongDaPhanBo);});
-  await t.test('Hủy đơn giải phóng giữ kho mà không tăng tồn vật lý',async()=>{await customer.ok('/cart',{variantId:v.id,quantity:2},'PUT');const a=await customer.ok('/orders',{requestId:randomUUID(),name:'QA',phone:'0909876543',address:'Địa chỉ QA',method:'COD'});await customer.ok('/orders/'+a.id+'/cancel',{reason:'QA hủy đơn'});await customer.ok('/orders/'+a.id+'/cancel',{reason:'QA retry hủy'});const [stock]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);assert.equal(stock.SoLuongTon,before.SoLuongTon);assert.equal(stock.SoLuongDaPhanBo,before.SoLuongDaPhanBo);});
+  await t.test('Hủy đơn ghi đúng trạng thái, lý do và chỉ giải phóng tồn một lần',async()=>{
+    assert.equal((await customer.call('/orders/'+id+'/cancel',{reason:'QA hủy đơn đã hoàn thành'})).status,400);
+    await customer.ok('/cart',{variantId:v.id,quantity:2},'PUT');
+    const a=await customer.ok('/orders',{requestId:randomUUID(),name:'QA',phone:'0909876543',address:'Địa chỉ QA',method:'COD'});
+    const reason='QA hủy đơn';
+    await customer.ok('/orders/'+a.id+'/cancel',{reason});
+    await customer.ok('/orders/'+a.id+'/cancel',{reason:'QA retry hủy'});
+    const [order]=await query('SELECT TrangThai,KhachHangID,NguoiHuyID,NgayHuy,LyDoHuy FROM DonHang WHERE DonHangID=?',[a.id]);
+    assert.equal(order.TrangThai,'DA_HUY');
+    assert.equal(order.NguoiHuyID,order.KhachHangID);
+    assert.ok(order.NgayHuy);
+    assert.equal(order.LyDoHuy,reason);
+    const history=await query("SELECT TrangThaiCu,GhiChu FROM LichSuDonHang WHERE DonHangID=? AND TrangThaiMoi='DA_HUY'",[a.id]);
+    assert.deepEqual(history,[{TrangThaiCu:'CHO_XAC_NHAN',GhiChu:reason}]);
+    const [stock]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);
+    assert.equal(stock.SoLuongTon,before.SoLuongTon);
+    assert.equal(stock.SoLuongDaPhanBo,before.SoLuongDaPhanBo);
+  });
   await t.test('Ẩn biến thể đã bán giữ lịch sử và chặn đặt từ giỏ cũ',async()=>{
     const before=await customer.ok('/orders/'+id);
     await customer.ok('/cart',{variantId:v.id,quantity:1},'PUT');

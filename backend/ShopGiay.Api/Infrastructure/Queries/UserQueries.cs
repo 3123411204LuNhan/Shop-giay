@@ -6,10 +6,6 @@ internal static class UserQueries
         SELECT t.TaiKhoanID id,t.HoTen name,t.Email email,t.TenDangNhap username,t.SoDienThoai phone,t.TrangThai status,t.NgayTao date,GROUP_CONCAT(v.MaVaiTro) roles FROM TaiKhoan t LEFT JOIN TaiKhoanVaiTro tv ON tv.TaiKhoanID=t.TaiKhoanID LEFT JOIN VaiTro v ON v.VaiTroID=tv.VaiTroID WHERE t.NgayXoa IS NULL GROUP BY t.TaiKhoanID ORDER BY t.TaiKhoanID
         """;
 
-    internal const string Insert = """
-        INSERT INTO TaiKhoan(TenDangNhap,Email,MatKhauHash,HoTen) VALUES(?,?,?,?)
-        """;
-
     internal const string AssignRole = """
         INSERT INTO TaiKhoanVaiTro(TaiKhoanID,VaiTroID,NguoiGanID) SELECT ?,VaiTroID,? FROM VaiTro WHERE MaVaiTro=?
         """;
@@ -32,10 +28,6 @@ internal static class UserQueries
 
     internal const string RevokeSessions = """
         UPDATE PhienDangNhap SET ThuHoiLuc=UTC_TIMESTAMP() WHERE TaiKhoanID=?
-        """;
-
-    internal const string LockAccount = """
-        SELECT TrangThai FROM TaiKhoan WHERE TaiKhoanID=? AND NgayXoa IS NULL FOR UPDATE
         """;
 
     internal const string Anonymize = """

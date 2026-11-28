@@ -4,6 +4,7 @@ namespace ShopGiay.Infrastructure;
 
 public sealed class OrderExpiryWorker(IServiceScopeFactory scopes,ILogger<OrderExpiryWorker> logger) : BackgroundService
 {
+    // Chạy định kỳ, tạo scope và gọi cùng OrderControl để hủy các đơn đủ điều kiện hết hạn.
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));

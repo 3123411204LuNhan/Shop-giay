@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.FileProviders;
 using MySqlConnector;
 using ShopGiay.Control;
+using ShopGiay.Entity;
 using ShopGiay.Infrastructure;
 
 var command = args.FirstOrDefault(arg => arg is "--verify-mail" or "--db-setup" or "--db-seed" or "--db-migrate");
@@ -49,15 +50,22 @@ builder.Services.AddSingleton<OtpMail>();
 builder.Services.AddSingleton<ImageStore>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<CatalogControl>();
+builder.Services.AddScoped<AccountRepository>();
 builder.Services.AddScoped<SessionControl>();
+builder.Services.AddScoped<CartRepository>();
 builder.Services.AddScoped<CartControl>();
 builder.Services.AddScoped<CheckoutControl>();
 builder.Services.AddScoped<AuthControl>();
+builder.Services.AddScoped<OrderRepository>();
 builder.Services.AddScoped<OrderControl>();
+builder.Services.AddScoped<InventoryRepository>();
 builder.Services.AddScoped<InventoryControl>();
+builder.Services.AddScoped<CatalogRepository>();
 builder.Services.AddScoped<CatalogManagement>();
 builder.Services.AddScoped<ReportControl>();
+builder.Services.AddScoped<PromotionRepository>();
 builder.Services.AddScoped<PromotionControl>();
+builder.Services.AddScoped<ReturnRepository>();
 builder.Services.AddScoped<ReturnControl>();
 builder.Services.AddScoped<UserControl>();
 builder.Services.AddHostedService<OrderExpiryWorker>();
@@ -142,6 +150,7 @@ app.Use(async (context,next) => {
     } catch (Exception e) when (!context.Response.HasStarted && !context.RequestAborted.IsCancellationRequested) {
         var (status,message,code) = e switch {
             ApiException error => (error.Status,error.Message,error.Code),
+            DomainRuleException error => (400,error.Message,null),
             BadHttpRequestException error => (error.StatusCode,"Dữ liệu yêu cầu không hợp lệ.",null),
             JsonException => (400,"Dữ liệu yêu cầu không hợp lệ.",null),
             MySqlException { Number: 1062 or 1451 } => (409,"Dữ liệu đã tồn tại hoặc đang được tham chiếu.",null),

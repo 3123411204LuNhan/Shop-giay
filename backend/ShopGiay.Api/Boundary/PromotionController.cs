@@ -19,12 +19,15 @@ public sealed class PromotionController(PromotionControl promotions,SessionContr
         return promotions.List(false,token);
     }
 
+    // Kiểm tra quyền quản lý rồi chuyển dữ liệu chương trình mới cho Control.
     [HttpPost("manage/promotions")]
     public Task<object> Create(JsonElement body,CancellationToken token) => promotions.Create(session.Require("manager").Id,body,token);
 
+    // Chuyển mã chương trình và điều kiện mới để Control kiểm tra lịch và trạng thái.
     [HttpPut("manage/promotions/{id}")]
     public Task<object> Update(string id,JsonElement body,CancellationToken token) => promotions.Update(Id(id),session.Require("manager").Id,body,token);
 
+    // Chuyển yêu cầu xóa để Control kiểm tra chương trình còn là bản nháp.
     [HttpDelete("manage/promotions/{id}")]
     public Task<object> Delete(string id,CancellationToken token) => promotions.Delete(Id(id),session.Require("manager").Id,token);
 }

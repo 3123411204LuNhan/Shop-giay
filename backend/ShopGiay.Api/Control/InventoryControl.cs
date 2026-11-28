@@ -5,7 +5,7 @@ using Q = ShopGiay.Infrastructure.InventoryQueries;
 
 namespace ShopGiay.Control;
 
-public sealed class InventoryControl(Sql sql)
+public sealed class InventoryControl(Sql sql,InventoryRepository inventory)
 {
     public Task<List<dynamic>> List(string? product,CancellationToken token) =>
         sql.Run(db => db.Rows(Q.Stock.Replace("{slot0}",product is null ? "" : "WHERE b.SanPhamID=?"),
@@ -25,6 +25,7 @@ public sealed class InventoryControl(Sql sql)
 
     private sealed record ReceiptLine(long Variant,int Quantity,decimal? Cost,int? Counted,int? Baseline);
 
+    // Chống tạo lặp, kiểm tra phiếu nháp và số kiểm đếm rồi lưu các dòng cùng nhật ký.
     public Task<object> Save(long? id,long actor,JsonElement body,CancellationToken token) =>
         sql.Transaction<object>(async db => {
             var request = id is null ? body.RequestKey() : null;
@@ -36,8 +37,8 @@ public sealed class InventoryControl(Sql sql)
                     return new { id = (long)old.id };
                 }
             } else {
-                var receipt = await db.One(Q.LockReceipt,id) ?? throw new ApiException("Không tìm thấy phiếu.",404);
-                if (receipt.TrangThai != "NHAP") throw new ApiException("Chỉ được sửa phiếu nháp.");
+                var receipt = await inventory.KhoaPhieu(db,id.Value) ?? throw new ApiException("Không tìm thấy phiếu.",404);
+                if (!receipt.LaPhieuNhap()) throw new ApiException("Chỉ được sửa phiếu nháp.");
             }
 
             var type = body.Text("type");
@@ -77,12 +78,12 @@ public sealed class InventoryControl(Sql sql)
                 var quantity = line.Quantity;
                 int? baseline = null;
                 if (line.Counted is int counted) {
-                    var stock = await db.One("SELECT SoLuongTon stock,SoLuongDaPhanBo reserved FROM TonKho WHERE BienTheID=? FOR UPDATE",line.Variant)
+                    var stock = await InventoryRepository.KhoaTon(db,line.Variant)
                         ?? throw new ApiException("Không tìm thấy tồn kho.",404);
-                    baseline = (int)stock.stock;
+                    baseline = stock.SoLuongTon;
                     if (line.Baseline is int expected && expected != baseline)
                         throw new ApiException("Tồn sổ đã thay đổi. Hãy tải lại và kiểm đếm lại.",409);
-                    if (counted < (int)stock.reserved) throw new ApiException("Số kiểm đếm thấp hơn lượng đang giữ.");
+                    if (counted < stock.SoLuongDaPhanBo) throw new ApiException("Số kiểm đếm thấp hơn lượng đang giữ.");
                     quantity = counted - baseline.Value;
                     if (quantity == 0) throw new ApiException("Số kiểm đếm bằng tồn sổ.");
                 }
@@ -93,34 +94,35 @@ public sealed class InventoryControl(Sql sql)
             return new { id };
         },token);
 
+    // Khóa phiếu, chuyển trạng thái rồi đối chiếu và ghi sổ các dòng trong một giao dịch.
     public Task<object> Confirm(long id,long actor,CancellationToken token) =>
         sql.Transaction(async db => {
-            var receipt = await db.One(Q.LockReceipt,id) ?? throw new ApiException("Không tìm thấy phiếu.",404);
-            if (receipt.TrangThai == "DA_XAC_NHAN") return Ok;
-            if (receipt.TrangThai != "NHAP") throw new ApiException("Phiếu đã hủy không thể xác nhận.");
-            var lines = await db.Rows(Q.LockLines,id);
+            var receipt = await inventory.KhoaPhieu(db,id) ?? throw new ApiException("Không tìm thấy phiếu.",404);
+            if (!receipt.HoanTatPhieu(actor,DateTime.UtcNow)) return Ok;
+            var lines = await inventory.TaiDongPhieu(db,id);
             if (lines.Count == 0) throw new ApiException("Phiếu không có dòng hàng.");
             foreach (var line in lines) {
-                var variant = (long)line.BienTheID;
+                var variant = line.BienTheID;
                 if (line.TonSoSach is int baseline && await db.Value<int?>(Q.LockStock,variant) != baseline)
                     throw new ApiException("Tồn sổ đã thay đổi. Hãy kiểm đếm và lưu lại phiếu nháp.",409);
-                await StockLedger.Change(db,actor,variant,(string)receipt.LoaiPhieu,(int)line.SoLuongThayDoi,0,null,(long)line.ChiTietPhieuKhoID,(string)receipt.LyDo);
+                await StockLedger.Change(db,actor,variant,receipt.LoaiPhieu,line.SoLuongThayDoi,0,null,line.ChiTietPhieuKhoID,receipt.LyDo);
             }
-            await db.Execute(Q.ConfirmReceipt,actor,id);
-            await db.Audit(actor,"XAC_NHAN_PHIEU_KHO","PhieuKho",id,(string)receipt.LyDo);
+            await inventory.LuuTrangThai(db,receipt);
+            await db.Audit(actor,"XAC_NHAN_PHIEU_KHO","PhieuKho",id,receipt.LyDo);
             return Ok;
         },token);
 
+    // Hủy phiếu nháp qua Entity rồi lưu trạng thái và lý do trong cùng giao dịch.
     public Task<object> Cancel(long id,long actor,JsonElement body,CancellationToken token) =>
         sql.Transaction(async db => {
-            var receipt = await db.One(Q.LockReceipt,id) ?? throw new ApiException("Không tìm thấy phiếu.",404);
-            if (receipt.TrangThai == "DA_HUY") return Ok;
-            if (receipt.TrangThai != "NHAP") throw new ApiException("Không hủy phiếu đã ghi sổ.");
-            await db.Execute(Q.CancelReceipt,id);
+            var receipt = await inventory.KhoaPhieu(db,id) ?? throw new ApiException("Không tìm thấy phiếu.",404);
+            if (!receipt.Huy()) return Ok;
+            await inventory.LuuTrangThai(db,receipt);
             await db.Audit(actor,"HUY_NHAP_KHO","PhieuKho",id,body.Required("reason","lý do hủy"));
             return Ok;
         },token);
 
+    // Kiểm tra ngưỡng cảnh báo rồi cập nhật bản ghi tồn và lưu nhật ký.
     public Task<object> Warning(long id,long actor,JsonElement body,CancellationToken token) =>
         sql.Transaction(async db => {
             var value = Integer(body.Field("warning"),0,100000,"Ngưỡng cảnh báo không hợp lệ.");

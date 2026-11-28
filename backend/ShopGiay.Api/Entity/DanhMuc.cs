@@ -3,10 +3,15 @@ namespace ShopGiay.Entity;
 public sealed class DanhMuc
 {
     public int DanhMucID { get; init; }
-    public required string TenDanhMuc { get; init; }
+    public string TenDanhMuc { get; private set; } = "";
     public string? MoTa { get; init; }
     public string? HinhAnh { get; init; }
-    public bool DangHoatDong { get; init; }
+    public bool DangHoatDong { get; private set; }
+    public bool LaBanNhap { get; private set; }
     public DateTime NgayTao { get; init; }
     public DateTime NgayCapNhat { get; init; }
+
+    // Đổi tên phân loại và đồng bộ cờ nháp khi bật hoặc ẩn.
+    public void CapNhat(string ten,bool active) =>
+        (TenDanhMuc,DangHoatDong,LaBanNhap) = (ten,active,!active);
 }

@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import mysql from 'mysql2/promise';
-import {config} from '../tests/db.js';
+import {config} from '../../tests/db.js';
 
 const host = '127.0.0.1';
 const url = port => `http://${host}:${port}`;
