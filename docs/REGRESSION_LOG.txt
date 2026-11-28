@@ -1,0 +1,60 @@
+
+> test
+> node --test --test-concurrency=1 tests/*.test.js
+
+✔ Giỏ khách không đọc giỏ localStorage cũ và được dọn khi chuyển tài khoản (4.638ms)
+✔ A giữ 2 đôi trong giỏ, B đăng nhập cùng trình duyệt không nhận giỏ A; tab A cũ không ghi vào B (1551.1612ms)
+✔ Chủ shop và kỹ thuật không được đăng nhập/mua hàng ở khu vực khách (1052.4568ms)
+✔ Cùng trình duyệt: admin, chủ shop và khách giữ phiên độc lập (1098.2509ms)
+▶ MySQL + ASP.NET Core: phân quyền, mua hàng, kho, hoàn tiền và quản trị
+  ✔ API health và đủ 37 bảng (156.649ms)
+  ✔ Không cho khách gọi API quản lý (8.5108ms)
+  ✔ Đăng ký khách mới không thể tự nâng quyền (261.5076ms)
+  ✔ Chủ shop không có quyền kỹ thuật và ngược lại (18.9583ms)
+  ✔ Giữ cố định quyền khách và chuyển vai trò nhân sự hai chiều (3504.4022ms)
+  ✔ Xóa nháp sản phẩm, danh mục và thương hiệu theo liên kết thực tế (553.0919ms)
+  ✔ Tạo đơn có ưu đãi và retry không tạo trùng/giữ trùng kho (140.9665ms)
+  ✔ Không thể nhảy trạng thái hoặc xem đơn người khác (289.9276ms)
+  ✔ Xác nhận thu một lần, xuất kho và hoàn thành (231.4532ms)
+  ✔ Trả hàng, nhận kho một lần và hoàn tiền có bằng chứng (239.6524ms)
+  ✔ Hủy đơn giải phóng giữ kho mà không tăng tồn vật lý (119.5781ms)
+  ✔ Báo cáo, log, kiểm soát tự nâng quyền (150.6868ms)
+  ✔ Đối chiếu tồn kho bằng sổ kho không có chênh lệch (4.7637ms)
+✔ MySQL + ASP.NET Core: phân quyền, mua hàng, kho, hoàn tiền và quản trị (6188.8046ms)
+▶ OTP: local fallback, xác minh, giới hạn thử, đặt mật khẩu và thu hồi phiên
+  ✔ Không thể dùng challenge để bỏ qua bước OTP (33.7624ms)
+  ✔ Gửi lại có giới hạn 60 giây; lần nhập sai được lưu thật (96.6255ms)
+  ✔ OTP đúng cấp quyền đặt lại một lần, OTP không được dùng lại (21.2965ms)
+  ✔ Đổi mật khẩu thành công, thu hồi phiên cũ, chặn dùng lại token (488.949ms)
+  ✔ Nhập sai 5 lần thì mã bị khóa kể cả khi sau đó nhập đúng (311.3593ms)
+  ✔ Email không có tài khoản ghi thư local nhưng không cho đặt mật khẩu (21.0785ms)
+✔ OTP: local fallback, xác minh, giới hạn thử, đặt mật khẩu và thu hồi phiên (1323.2208ms)
+▶ Luồng phát triển: phiếu kho, hết hạn, COD, giao thất bại, tiền đến muộn và hoàn tiền
+  ✔ Tạo màu, chọn size lẻ và chặn trùng tổ hợp (274.3506ms)
+  ✔ Biến thể đang bán phải lưu ẩn trước khi sửa hoặc xóa (80.3875ms)
+  ✔ Công bố, kết thúc, gia hạn và xóa mã nháp trên trang khách (331.9345ms)
+  ✔ Phiếu nháp không tăng kho; sửa được; xác nhận đồng thời chỉ tăng một lần (183.9355ms)
+  ✔ Mức trần phần trăm, bỏ trần và giảm cố định khớp với báo giá (177.6437ms)
+  ✔ Hủy nháp không đổi kho; điều chỉnh âm quá tồn bị hoàn tác toàn bộ (100.4453ms)
+  ✔ Ngưỡng cảnh báo và sổ kho truy xuất được (50.3791ms)
+  ✔ Giá thay đổi sau bước kiểm tra: từ chối tạo đơn, không giữ hàng (46.4018ms)
+  ✔ Chuyển khoản chưa thu không được xác nhận; hết hạn giải phóng giữ hàng đúng một lần (34094.8392ms)
+  ✔ Tiền đến sau hủy tạo một khoản hoàn, không khôi phục đơn hay giữ hàng (49.0628ms)
+  ✔ COD chỉ ghi nhận thu sau giao; hàng đang giao thất bại chưa được hoàn kho (450.8641ms)
+  ✔ Thực nhận hàng giao thất bại: chỉ tăng số đôi bán lại, retry không cộng trùng (62.05ms)
+  ✔ Trả hàng đã nhận được lưu dù COD chưa đối soát; chặn hoàn tất khi chưa hoàn đủ (702.3262ms)
+  ✔ Quá thời hạn trả bị từ chối; sổ kho khớp tồn thực tế và đang giữ (127.8797ms)
+✔ Luồng phát triển: phiếu kho, hết hạn, COD, giao thất bại, tiền đến muộn và hoàn tiền (37535.8743ms)
+ℹ tests 40
+ℹ suites 0
+ℹ pass 40
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50572.2692
+npm notice
+npm notice New major version of npm available! 11.14.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

@@ -1,0 +1,62 @@
+/* Một quy tắc ảnh chung: khung cố định, ảnh tự vừa theo cả chiều ngang và dọc. */
+.product-media {
+  display: block;
+  position: relative;
+  min-width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: #f8f9f6;
+  border: 1px solid #e8ece5;
+  border-radius: 9px;
+}
+.product-media > img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: auto;
+  mix-blend-mode: normal;
+}
+.product-media-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  color: #7d8779;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.product-media-placeholder > span { flex: 0 1 auto; font-size: inherit; }
+/* Ảnh quản lý không bị flex co nhỏ hoặc kéo méo khi tên sản phẩm dài. */
+.table-product { min-width: 240px; }
+.table-product > div { min-width: 0; }
+.table-product b { overflow-wrap: anywhere; }
+.table-product .product-media--thumb { width: 76px; height: 76px; padding: 5px; }
+.product-media--thumb .product-media-placeholder { font-size: 8px; gap: 4px; padding: 2px; }
+.product-media--thumb .product-media-placeholder svg { width: 20px; height: 20px; }
+/* Thẻ sản phẩm và chi tiết cùng hiển thị trọn ảnh trên nền trung tính. */
+.storefront-main .product-photo { aspect-ratio: 1; }
+.product-media--card { width: 100%; height: 100%; padding: clamp(10px, 2vw, 22px); border: 0; }
+.detail-photo { align-self: start; background: #f8f9f6; }
+.detail-photo .product-media--detail { width: 100%; aspect-ratio: 1; padding: clamp(12px, 3vw, 30px); }
+.cart-line .product-media--cart { flex: 0 0 93px; width: 93px; height: 100px; padding: 5px; }
+.favorite-line .product-media--favorite { flex: 0 0 68px; width: 68px; height: 68px; padding: 5px; }
+.topic-card > .product-media--topic { height: 205px; width: 100%; margin: 14px 0; padding: 10px; }
+/* Xem trước trong biểu mẫu dùng chính component đang hiển thị cho khách. */
+.image-field-preview { display: grid; gap: 8px; margin-top: 10px; }
+.product-media--preview { width: 100%; max-width: 320px; aspect-ratio: 1; padding: 14px; }
+.image-field-preview > small { line-height: 1.6; }
+@media (max-width: 1000px) {
+  .topic-card > .product-media--topic { height: 160px; }
+}
+@media (max-width: 700px) {
+  .table-product { min-width: 210px; }
+  .table-product .product-media--thumb { width: 64px; height: 64px; }
+  .cart-line .product-media--cart { flex-basis: 75px; width: 75px; height: 85px; }
+  .topic-card > .product-media--topic { width: 46%; height: 145px; margin: 0; position: absolute; right: 3%; top: 50px; }
+  .product-media--preview { max-width: 100%; }
+}

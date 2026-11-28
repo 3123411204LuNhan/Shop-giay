@@ -481,7 +481,6 @@ CREATE TABLE IF NOT EXISTS ChiTietPhieuKho (
   PhieuKhoID bigint NOT NULL,
   BienTheID bigint NOT NULL,
   SoLuongThayDoi int NOT NULL CHECK (SoLuongThayDoi <> 0),
-  TonSoSach int NULL,
   DonGiaNhap decimal(18,2) NULL CHECK (DonGiaNhap >= 0),
   ChiTietDoiTraID bigint NULL,
   GhiChu varchar(1000) NULL,

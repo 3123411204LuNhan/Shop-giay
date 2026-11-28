@@ -1,0 +1,101 @@
+KẾT QUẢ KIỂM THỬ BẢN C# SHOP GIÀY
+Ngày thực hiện: 28/11/2026
+
+BIÊN DỊCH
+- .NET SDK 10.0.401, ASP.NET Core .NET 10.
+- Solution build thành công: 0 lỗi, 0 cảnh báo.
+- React/Vite build thành công; wwwroot đã có bản giao diện sẵn để chạy bằng C#.
+- Lần chuyển ngôn ngữ ban đầu: 18/18 file giao diện khớp nội dung gốc.
+- Cập nhật theo yêu cầu: main.jsx, storefront.jsx, watch-store.js đã được chỉnh;
+  15/18 file gốc còn lại vẫn khớp. Bổ sung product-image.jsx và product-image.css.
+- 75 API nghiệp vụ có trong Controller, thêm /api/health.
+
+KIỂM TRA C# KHÔNG CẦN DATABASE
+- 31/31 kiểm tra thành công (bổ sung 2 kiểm tra cấu hình MySQL).
+- PBKDF2, salt riêng, từ chối hash/mật khẩu sai.
+- Scrypt tương thích vector tạo bởi node:crypto.scryptSync của bản gốc.
+- Khu vực đăng nhập, vai trò, khóa/xóa tài khoản.
+- Quy trình trạng thái đơn; giữ/xuất kho, ngăn tồn âm và phân bổ âm.
+- Validation ID, số lượng, ảnh, UUID và JSON.
+
+KIỂM THỬ HỒI QUY HTTP VỚI MYSQL
+- 40/40 kiểm tra thành công, 0 thất bại, 0 bỏ qua.
+- Chạy trên ASP.NET Core thật, không dùng backend Express.
+- MySQL 8.0.46 chạy cô lập trên 127.0.0.1:33319 với thư mục dữ liệu thử riêng.
+- Database thử cuối: sole_studio_nhom19_csharp_qa_final.
+- Seed mới xác nhận 37 bảng, 12 sản phẩm, 108 biến thể, 12 đơn, 1 yêu cầu trả mẫu.
+- Migrate chạy hai lần thành công; số lượng dữ liệu mẫu không đổi.
+- Đối chiếu TonKho với tổng BienDongKho sau seed: 0 chênh lệch.
+
+Các nhóm hồi quy đã qua:
+- Phiên admin/quản lý/khách độc lập trong cùng trình duyệt.
+- Giỏ A/B không trộn; tab cũ bị chặn khi tài khoản thay đổi.
+- Đăng ký không nâng quyền; quản lý/admin không gọi chéo chức năng.
+- Đổi mật khẩu nhân sự, thu hồi phiên, chuyển vai trò và xóa mềm.
+- Sản phẩm/danh mục/thương hiệu: ẩn trước khi sửa/xóa, bảo vệ liên kết.
+- Size thập phân, màu mới, SKU và tổ hợp biến thể không trùng.
+- Báo giá, trần giảm phần trăm, bỏ trần và giảm số tiền cố định.
+- Đặt đơn gửi lại không tạo trùng; thay giá sau quote bị từ chối.
+- Xác nhận phiếu kho đồng thời chỉ tăng tồn một lần; điều chỉnh sai rollback.
+- Chuyển khoản chưa thu không xử lý đơn; hết hạn giải phóng giữ hàng đúng một lần.
+- Tiền đến muộn tạo khoản hoàn, không hồi sinh đơn/kho.
+- COD chỉ thu sau giao; hàng giao thất bại chỉ hoàn kho sau thực nhận.
+- Trả hàng, nhận hàng, khoản hoàn có bằng chứng, thử lại an toàn.
+- Quá hạn trả bị từ chối; chưa hoàn đủ tiền không hoàn tất yêu cầu.
+- Báo cáo doanh thu, nhật ký và đối chiếu sổ kho.
+- OTP: lưu thư local, lưu số lần sai, khóa sau 5 lần, mã/grant dùng một lần.
+
+KIỂM TRA GIAO DIỆN BẰNG TRÌNH DUYỆT
+- Trang khám phá và danh sách sản phẩm hiển thị.
+- Mở chi tiết sản phẩm, chọn EU 42, thêm giỏ; đúng size/màu/giá hiện trên giỏ.
+- Hướng dẫn HTML hiển thị 75 API; tìm checkout/quote và bấm Service mở đúng dòng 165.
+
+PHẠM VI CẦN PHÂN BIỆT
+- Đã kết nối cấu hình local của người dùng và khởi tạo database sole_studio;
+  chi tiết lần sửa lỗi web: docs/SUA_LOI_DATABASE_WEB.txt.
+- Chưa xác thực gửi SMTP qua tài khoản thật; đã kiểm tra hộp thư local và quy trình OTP.
+- Chưa mở Visual Studio 2026 để chạy F5 trực tiếp; solution/config được biên dịch bằng SDK .NET 10 trên máy.
+- Migrate đã được chạy lặp trên database thử; trước khi chạy trên schema cũ cần sao lưu.
+- Cổng thanh toán online, đổi trực tiếp và kết hợp nhiều mã khuyến mãi là các nhánh
+  thiết kế chưa có trong bản gốc; phiên bản chuyển giữ phạm vi hiện có và ghi rõ trong hướng dẫn.
+
+CÁCH CHẠY LẠI
+- tests/ShopGiay.Tests: dotnet run --project tests/ShopGiay.Tests.
+- tests/Regression: làm theo README.txt trong thư mục đó và dùng schema thử mới.
+
+CẬP NHẬT ẨN MÃ VẬN ĐƠN
+- Ẩn nút Mã vận đơn, biểu mẫu đơn vị/mã vận đơn và dòng mã trên chi tiết đơn.
+- Giữ thông báo trạng thái giao hàng, giao thất bại, giao lại và nhận hàng hoàn.
+- React/Vite build thành công; wwwroot đã cập nhật bản giao diện mới.
+
+CẬP NHẬT ẢNH SẢN PHẨM
+- Component ProductImage dùng object-fit contain, giữ ảnh trọn vẹn theo tỷ lệ gốc.
+- Dùng chung ở bảng quản lý, thẻ sản phẩm, chi tiết, gợi ý danh mục, giỏ và yêu thích.
+- Xem trước trực tiếp khi thay đường dẫn ảnh trong biểu mẫu quản lý.
+- Browser kiểm tra ảnh 1400x350, 350x1400, 800x800 nền trong suốt và URL hỏng.
+- Khung danh sách khách 262x262; khung quản lý 74x74 ở viewport desktop thực tế;
+  cả ảnh ngang/dọc/vuông đều có computed object-fit contain, giữ đủ đường viền ảnh.
+- URL hỏng hiển thị hình thay thế, không làm vỡ khung ảnh.
+- Cập nhật ảnh qua giao diện quản lý, lưu/công bố: tab khách đang mở nhận đúng
+  URL ảnh mới mà không reload; ảnh chi tiết và xem trước cũng dùng đúng URL.
+- Có CSS cho màn hình nhỏ. Công cụ viewport không áp dụng được kích thước 390px
+  trong phiên kiểm thử này, nên chưa xác nhận trực quan trên điện thoại thật.
+- Các sản phẩm/ảnh thử có tiền tố riêng đã được xóa sau khi kiểm tra.
+
+CẬP NHẬT ĐĂNG NHẬP SAI KHU VỰC RỒI NHẬP LẠI
+- Database sole_studio có đúng vai trò CUSTOMER/SHOP_MANAGER/SYSTEM_ADMIN.
+- Không sửa hoặc cấp lại quyền trong database.
+- AuthService dùng LoginResult thay throw ApiException cho lỗi đăng nhập dự kiến.
+- Giữ HTTP 401/403 và nhật ký thất bại; đăng nhập thành công vẫn chỉ cấp cookie đúng khu vực.
+- 2/2 test mới: manager và admin sai khu vực → sai mật khẩu → nhập đúng → API bảo vệ HTTP 200.
+- 31 kiểm tra C# đạt; build bản sửa 0 lỗi, 0 cảnh báo.
+- Chi tiết: docs/SUA_LOI_DANG_NHAP_KHU_VUC.txt.
+
+CẬP NHẬT SỬA LỖI CẤU HÌNH MYSQL
+- --db-config chạy tương tác: nhập mật khẩu ẩn, đăng nhập rồi lưu file thử thành công.
+- --db-check đọc cấu hình đã lưu: kết nối thành công và nhận đủ 37 bảng.
+- User không tồn tại không gửi mật khẩu và root gửi mật khẩu sai đều trả lời lỗi
+  đăng nhập ngắn gọn, exit code 1, không còn stack trace Unhandled exception.
+- Build sau sửa: 0 lỗi, 0 cảnh báo; 31 kiểm tra C# thành công.
+- Lần sửa cấu hình đầu kiểm tra trên MySQL thử riêng cổng 33319.
+  Lần sửa web sau đó đã xác minh database sole_studio tại cổng 3306 theo file local.

@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><UserSecretsId>ShopGiay-Nhom19-CSharp</UserSecretsId></PropertyGroup>
+  <ItemGroup><PackageReference Include="MySqlConnector" Version="2.6.2" /></ItemGroup>
+  <ItemGroup><Content Include="../../database/schema.sql" Link="database/schema.sql" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+</Project>

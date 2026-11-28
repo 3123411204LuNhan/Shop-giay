@@ -1,0 +1,42 @@
+GIT VÀ VISUAL STUDIO 2026
+
+Repository: https://github.com/3123411204LuNhan/Shop-giay.git
+Remote: origin
+Nhánh: main, theo dõi origin/main sau khi push thành công.
+
+TRÊN MÁY HIỆN TẠI
+Mở solution tại:
+C:\Users\sangl\Documents\Codex\2026-11-28\c\outputs\ShopGiay.CSharp\ShopGiay.sln
+Thư mục này đã có Git. Nếu Visual Studio đang mở solution này từ trước,
+đóng và mở lại solution để Visual Studio nhận repository.
+
+MỖI LẦN CẬP NHẬT
+1. Git > Pull để lấy thay đổi mới khi làm việc trên nhiều máy.
+2. Sửa code, chạy thử.
+3. View > Git Changes: kiểm tra danh sách file và diff.
+4. Nhập mô tả thay đổi, chọn Commit All (hoặc stage và commit file đã chọn).
+5. Chọn Push. Có thể chọn Commit All and Push nếu Visual Studio hiển thị.
+6. Nếu được yêu cầu đăng nhập, dùng tài khoản GitHub có quyền ghi repository.
+
+KHÔNG CẦN ĐỔI ĐƯỜNG DẪN TRONG CODE
+Remote Git lưu trong .git/config của thư mục dự án. Đổi remote không đổi URL web
+localhost và không đổi kết nối MySQL. Khi chuyển máy, dùng Git > Clone Repository
+với URL trên rồi mở ShopGiay.sln và chạy configure-mysql.cmd trên máy đó.
+File ZIP không chứa .git: giải nén ZIP sẽ không mang theo remote; hãy clone GitHub
+để có đầy đủ cấu hình và lịch sử Git.
+
+FILE RIÊNG CỦA MÁY
+appsettings.Local.json, .local (email/ảnh tải lên cục bộ), .vs, bin, obj,
+node_modules và .env bị .gitignore loại khỏi commit. Không dùng Force Add để
+đưa cấu hình mật khẩu lên Git. Database MySQL không được đồng bộ bằng Git.
+appsettings.Local.example.json là mẫu cấu hình được chia sẻ, không có mật khẩu thật.
+
+KIỂM TRA BẰNG TERMINAL KHI CẦN
+git status -sb
+git remote -v
+git branch -vv
+git pull --ff-only
+git push
+
+Nếu xuất hiện xung đột, xử lý bằng Git Changes rồi commit trước khi push tiếp.
+Không force push nhánh main để ghi đè thay đổi của người khác.

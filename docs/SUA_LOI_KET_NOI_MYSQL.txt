@@ -1,0 +1,33 @@
+LỖI NGƯỜI DÙNG GỬI
+Access denied for user 'root'@'localhost' (using password: NO)
+
+NGUYÊN NHÂN ĐÃ XÁC MINH
+Project chưa có src/ShopGiay.Web/appsettings.Local.json.
+appsettings.json mặc định dùng root và Password= để trống.
+Vì vậy MySQL từ chối đăng nhập trước khi tạo bảng hoặc seed dữ liệu.
+Đây không phải lỗi biên dịch C# hoặc lỗi câu lệnh dotnet run.
+
+ĐÃ SỬA TRONG CODE
+- Thêm --db-config: nhập mật khẩu ẩn, kiểm tra đăng nhập server trước khi lưu.
+- Giữ nguyên Store/Mail khi cập nhật file local.
+- Thêm --db-check: kiểm tra database chỉ đọc.
+- Bắt lỗi MySQL và hiện hướng dẫn ngắn; CLI trả exit code 1 khi thất bại.
+- Thêm configure-mysql.cmd để chạy cấu hình và kiểm tra.
+- ZIP loại trừ appsettings.Local.json để không đóng gói mật khẩu cục bộ.
+
+CẦN THỰC HIỆN TRÊN MÁY CỦA BẠN
+Tại thư mục chứa ShopGiay.sln:
+  dotnet run --project src/ShopGiay.Web -- --db-config
+Nhập mật khẩu MySQL đang dùng trong Workbench. Ký tự mật khẩu không hiện khi gõ.
+Sau khi lưu thành công:
+  dotnet run --project src/ShopGiay.Web -- --db-check
+
+Nếu dùng lại database shop giày cũ:
+  dotnet run --project src/ShopGiay.Web
+Nếu chọn một database MỚI:
+  dotnet run --project src/ShopGiay.Web -- --db-setup
+  dotnet run --project src/ShopGiay.Web -- --db-seed
+  dotnet run --project src/ShopGiay.Web
+
+Mật khẩu MySQL thực tế chưa được cung cấp; không tự thay đổi tài khoản hoặc
+mật khẩu trên server. Cần nhập đúng mật khẩu một lần ở bước cấu hình trên.

@@ -1,0 +1,37 @@
+LỖI ĐƯỢC BÁO
+ShopGiay.Web.Infrastructure.ApiException: Tài khoản không có quyền đăng nhập khu vực này.
+
+KẾT QUẢ KIỂM TRA
+Database sole_studio kết nối được, có 37 bảng.
+Ba tài khoản demo đều HOAT_DONG, không bị khóa:
+- khach@sole.vn: CUSTOMER.
+- shop@sole.vn: SHOP_MANAGER.
+- admin@sole.vn: SYSTEM_ADMIN.
+Không thay đổi vai trò trong database.
+
+NGUYÊN NHÂN
+Đúng email/mật khẩu chưa đủ: tài khoản phải có vai trò của khu vực đăng nhập.
+Trang / gửi khu vực customer. Quản lý phải vào /manager; kỹ thuật phải vào /admin.
+Code cũ dùng throw ApiException cho trường hợp từ chối dự kiến. Nếu Visual Studio
+đang dừng tại exception được ném ra, request chưa hoàn thành và không xử lý lần nhập lại.
+
+ĐÃ SỬA
+AuthService trả LoginResult cho sai mật khẩu, tài khoản khóa hoặc sai khu vực.
+AuthController chuyển kết quả thành HTTP 401/403, không ném ApiException cho
+các trường hợp này. Trình duyệt hiển thị thông báo và vẫn cho nhập lại.
+Nhật ký từ chối đăng nhập và các quy tắc vai trò/cookie vẫn được giữ.
+Lỗi thật từ MySQL vẫn được xử lý theo cơ chế lỗi database.
+
+CÁCH CHẠY BẢN SỬA
+1. Shift+F5 trong Visual Studio để dừng phiên cũ, rồi F5 để build/chạy lại.
+2. Mở đúng địa chỉ:
+   Quản lý: http://localhost:5173/manager — shop@sole.vn.
+   Kỹ thuật: http://localhost:5173/admin — admin@sole.vn.
+   Khách: http://localhost:5173/ — khach@sole.vn.
+3. Mật khẩu demo: SoleDemo@123.
+
+KIỂM THỬ
+Bổ sung test login-retry.test.js: với cả quản lý và admin, đăng nhập sai khu vực,
+tiếp theo sai mật khẩu, sau đó nhập đúng vẫn nhận HTTP 200 và truy cập được
+API được phân quyền. Có thể chạy riêng bằng:
+  node --test tests/Regression/tests/login-retry.test.js

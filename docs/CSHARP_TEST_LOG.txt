@@ -1,0 +1,30 @@
+PASS: PBKDF2 xác minh đúng
+PASS: PBKDF2 từ chối sai mật khẩu
+PASS: Salt khác nhau mỗi lần
+PASS: Hash hỏng được từ chối
+PASS: Mật khẩu scrypt Node.js cũ
+PASS: Scrypt từ chối sai mật khẩu
+PASS: Khách chỉ dùng khu mua sắm
+PASS: Quản lý không dùng phiên khách
+PASS: Admin không có quyền quản lý shop
+PASS: Vai trò quản lý đúng khu vực
+PASS: Khu vực lạ bị từ chối
+PASS: Không nhảy từ chờ sang hoàn thành
+PASS: Đơn đã hủy không chạy lại luồng
+PASS: Đơn đang giao không được hủy trực tiếp
+PASS: Giữ hàng chỉ giảm khả dụng
+PASS: Xuất giao giảm tồn và giữ
+PASS: Không điều chỉnh thấp hơn phân bổ
+PASS: Lỗi không đổi thực thể tồn
+PASS: Không cho phân bổ âm
+PASS: Khách không nâng thành quản lý
+PASS: Không xóa admin
+PASS: Khóa trước khi xóa quản lý
+PASS: Chuyển nhân sự hai chiều
+PASS: Số lượng không nhận phần lẻ
+PASS: Ảnh không nhận javascript
+PASS: Chống lặp yêu cầu UUID
+PASS: JSON bool và số decimal
+PASS: Mật khẩu đặc biệt không bị hỏng khi lưu cấu hình
+PASS: Cấu hình MySQL giữ nguyên Store đang có
+Đã qua 31 kiểm tra C#.

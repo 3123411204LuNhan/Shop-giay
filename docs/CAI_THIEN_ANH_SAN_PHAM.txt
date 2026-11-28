@@ -1,0 +1,31 @@
+CẢI THIỆN ẢNH SẢN PHẨM
+
+Nguyên nhân cũ: object-fit cover cắt ảnh theo khung; thumbnail trong flex có thể
+bị co nhỏ. Ảnh dọc, ngang và vuông vì vậy trông khác nhau giữa các khu vực.
+
+Đã thay đổi:
+- ProductImage hiển thị ảnh đầy đủ bằng contain, căn giữa và giữ nguyên tỷ lệ.
+- Khung ảnh nền trung tính, không pha màu ảnh; thumbnail quản lý không bị co.
+- Đồng nhất ảnh ở quản lý, danh sách khách, chi tiết, giỏ, yêu thích và gợi ý danh mục.
+- Ảnh thiếu/lỗi có icon và thông báo thay thế; đổi sang URL mới sẽ thử tải ảnh mới.
+- Biểu mẫu sửa ảnh có phần xem trước dùng chính ProductImage.
+- Khi lưu sản phẩm, trình duyệt phát sự kiện cập nhật để các tab khách làm mới.
+  Các thiết bị khác vẫn kiểm tra mỗi 30 giây khi trang đang hiển thị.
+- Quản lý và khách tiếp tục đọc cùng ảnh chính từ API/HinhAnhSanPham.
+
+CÁCH SỬ DỤNG
+1. Ẩn sản phẩm theo quy trình hiện tại trước khi chỉnh sửa thông tin.
+2. Nhập đường dẫn ảnh chính HTTP(S) hoặc /images/… và xem trước ngay bên dưới.
+3. Lưu và công bố lại sản phẩm khi sẵn sàng.
+4. Trang khách nhận ảnh mới khi cập nhật; dùng Ctrl+F5 sau khi cập nhật bản code
+   để trình duyệt nạp bundle giao diện mới.
+
+ĐIỂM ĐIỀU KHIỂN CODE
+frontend/src/product-image.jsx: component ảnh và xử lý URL ảnh lỗi.
+frontend/src/product-image.css: kích thước thumbnail, card, chi tiết và responsive.
+frontend/src/watch-store.js: sự kiện cập nhật giữa các tab và chu kỳ làm mới.
+frontend/src/main.jsx: API phát thông báo sau khi lưu, xem trước ảnh và ảnh quản lý.
+frontend/src/storefront.jsx: ảnh trong danh sách và gợi ý phía khách.
+
+Lưu ý: ảnh vẫn sử dụng đường dẫn theo chức năng hiện có; phần này không thêm
+dịch vụ upload file. Chất lượng ảnh phụ thuộc độ phân giải và nguồn ảnh ban đầu.

@@ -1,0 +1,18 @@
+
+> shopgiay-csharp-ui@1.0.0 build
+> vite build
+
+vite v7.3.8 building client environment for production...
+transforming...
+✓ 1585 modules transformed.
+rendering chunks...
+computing gzip size...
+../src/ShopGiay.Web/wwwroot/index.html                   0.58 kB │ gzip:   0.41 kB
+../src/ShopGiay.Web/wwwroot/assets/index-CLW6GsA0.css   52.41 kB │ gzip:  11.54 kB
+../src/ShopGiay.Web/wwwroot/assets/index-DLJ_Tp8b.js   332.57 kB │ gzip: 102.14 kB
+✓ built in 3.48s
+npm notice
+npm notice New major version of npm available! 11.14.1 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

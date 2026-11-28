@@ -1,0 +1,36 @@
+LỖI WEB SAU KHI CẤU HÌNH KẾT NỐI THÀNH CÔNG
+
+Nguyên nhân xác minh trực tiếp:
+- Tài khoản/mật khẩu MySQL đã đúng.
+- Cấu hình chọn database sole_studio nhưng database này chưa tồn tại trên server.
+- Lệnh cấu hình trước đó chỉ xác minh đăng nhập server, chưa xác minh bảng ứng dụng.
+
+Đã xử lý trên máy:
+- Khởi tạo database sole_studio theo cấu hình người dùng đã lưu.
+- Tạo 37 bảng và seed dữ liệu mẫu: 12 sản phẩm, 108 biến thể, 12 đơn, 2 ưu đãi.
+- --db-check xác nhận kết nối database thành công với đủ 37 bảng.
+- Web bản sửa dùng chính cấu hình local, chạy tạm tại 127.0.0.1:5183 để kiểm tra:
+  /api/health: HTTP 200, database connected.
+  /api/catalog: HTTP 200, 12 sản phẩm.
+  /api/promotions: HTTP 200, 2 ưu đãi.
+  Đăng nhập khách, quản lý, admin: thành công.
+  /api/cart, /api/manage/products, /api/admin/system: HTTP 200.
+- Build riêng do Visual Studio đang giữ file exe: 0 lỗi, 0 cảnh báo.
+- 31 kiểm tra C# thành công.
+
+Sửa thông báo để lần sau dễ nhận biết:
+- Web phân biệt lỗi thiếu database, thiếu bảng, thiếu cột và sai tài khoản MySQL.
+- --db-check từ chối database kết nối được nhưng thiếu các bảng chính của shop.
+- --db-config nhắc rõ bước xác minh tài khoản khác với bước kiểm tra database.
+
+Cần làm trên phiên Visual Studio đang mở:
+1. Shift+F5 để dừng phiên web/debug hiện tại.
+2. F5 hoặc Ctrl+F5 để biên dịch và chạy lại.
+3. Mở http://localhost:5173 và tải lại trang.
+Không cần nhập lại mật khẩu MySQL hoặc chạy lại seed.
+
+Tài khoản mẫu:
+- Khách: khach@sole.vn (khu vực mua sắm).
+- Quản lý: shop@sole.vn (khu vực /manager).
+- Kỹ thuật: admin@sole.vn (khu vực /admin).
+Mật khẩu demo: SoleDemo@123.
