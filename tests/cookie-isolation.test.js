@@ -15,11 +15,12 @@ test('Cùng trình duyệt: admin, chủ shop và khách giữ phiên độc l�
   const admin=await call('admin','/auth/login',{login:'admin@sole.vn',password:'SoleDemo@123'});
   assert.equal(admin.status,200);assert.equal(admin.data.area,'admin');
   assert.match(admin.cookies.join(';'),/sole_admin_session=/);
-  assert.match(admin.cookies.join(';'),/HttpOnly/);assert.match(admin.cookies.join(';'),/SameSite=Strict/);
+  assert.match(admin.cookies.join(';'),/HttpOnly/i);assert.match(admin.cookies.join(';'),/SameSite=Strict/i);
   assert.doesNotMatch(admin.cookies.join(';'),/; Secure/i,'HTTP local không được buộc cookie Secure.');
   assert.equal((await call('customer','/me')).data.user,null);
   assert.equal((await call('manager','/me')).data.user,null);
   const adminId=(await call('admin','/me')).data.user.id;
+  assert.equal((await call('__proto__','/admin/accounts')).status,200);
 
   assert.equal((await call('customer','/auth/register',{email:`isolation-${randomUUID()}@example.test`,name:'QA Phiên khách',password:'IsolationTest@123'})).status,200);
   assert.equal((await call('manager','/auth/login',{login:'shop@sole.vn',password:'SoleDemo@123'})).status,200);

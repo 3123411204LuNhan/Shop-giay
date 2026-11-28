@@ -7,25 +7,21 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "dev": "node --watch-path=server --watch-path=.env server/index.js",
-    "build": "vite build",
-    "start": "node server/index.js --production",
-    "db:setup": "node scripts/setup-db.js",
-    "db:seed": "node scripts/seed.js",
+    "dev": "node scripts/start-system.js",
+    "build": "vite build frontend",
+    "start": "node scripts/start-system.js --production",
+    "db:setup": "node scripts/start-system.js --db-setup",
+    "db:seed": "node scripts/start-system.js --db-seed",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
-    "check": "node --check server/index.js && node --check server/routes.js && node --check server/operations.js && node --check server/store-config.js && node --check server/workflow-schema.js",
-    "db:migrate": "node scripts/migrate.js",
-    "mail:verify": "node scripts/verify-mail.js"
+    "test:integration": "node scripts/start-system.js --test-integration",
+    "check": "node --check scripts/start-system.js && node --check scripts/test-integration.js && dotnet build backend/ShopGiay.Api",
+    "db:migrate": "node scripts/start-system.js --db-migrate",
+    "mail:verify": "node scripts/start-system.js --verify-mail"
   },
   "dependencies": {
-    "cookie-parser": "^1.4.7",
     "dotenv": "^16.6.1",
-    "express": "^5.1.0",
-    "express-rate-limit": "^8.2.1",
-    "helmet": "^8.1.0",
     "lucide-react": "^0.468.0",
     "mysql2": "^3.14.5",
-    "nodemailer": "^10.6.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "vite": "^7.1.7"

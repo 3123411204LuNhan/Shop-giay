@@ -12,3 +12,6 @@ test-results/
 *.zip
 .DS_Store
 Thumbs.db
+
+backend/**/bin/
+backend/**/obj/

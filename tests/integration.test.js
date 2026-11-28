@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {pool,config,query} from '../server/db.js';
+import {pool,config,query} from './db.js';
 const base=`http://127.0.0.1:${process.env.PORT||5173}/api`;
 class Client{cookie='';area='customer';async call(path,body,method=body?'POST':'GET'){const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json','X-Sole-Request':'1','X-Sole-Area':this.area,Cookie:this.cookie},body:body?JSON.stringify(body):undefined});if(r.headers.get('set-cookie'))this.cookie=r.headers.getSetCookie().at(-1).split(';')[0];const data=await r.json();if(data.area&&r.ok)this.area=data.area;return {status:r.status,data};}async ok(...args){const r=await this.call(...args);assert.ok(r.status<300,JSON.stringify(r));return r.data;}}
-test('MySQL + Node.js: phân quyền, mua hàng, kho, hoàn tiền và quản trị',async t=>{
+test('ASP.NET Core + MySQL: phân quyền, mua hàng, kho, hoàn tiền và quản trị',async t=>{
  assert.match(config.database,/^sole_studio_nhom19/,'Chỉ chạy trên database đồ án riêng.');
  const guest=new Client(),customer=new Client(),manager=new Client(),admin=new Client();
  try{
@@ -80,16 +80,19 @@ test('MySQL + Node.js: phân quyền, mua hàng, kho, hoàn tiền và quản tr
     const path='/manage/products/'+product.id;
     assert.equal((await remove(path)).status,409);
     const image='/images/shoe-green.jpg';
-    assert.equal((await manager.call(path,{status:'AN',image},'PUT')).status,409);
-    for(const status of ['NGUNG_BAN','DANG_BAN']){
-      await manager.ok(path,{status},'PUT');
-      assert.equal((await manager.call(path,{name:'Tên thay đổi'},'PUT')).status,409);
-    }
-    await manager.ok(path,{status:'AN'},'PUT');
-    await manager.ok(path,{image},'PUT');
+    await manager.ok(path,{image,description:'Mô tả mới'},'PUT');
+    for(const status of ['NGUNG_BAN','DANG_BAN']) await manager.ok(path,{status},'PUT');
     await manager.ok(brandPath,{name,status:'HOAT_DONG'},'PUT');
     await manager.ok(path,{status:'DANG_BAN'},'PUT');
-    assert.equal((await customer.ok('/products/'+product.id)).image,image);
+    const updated=await customer.ok('/products/'+product.id);
+    assert.equal(updated.image,image);
+    assert.equal(updated.description,'Mô tả mới');
+    const duplicate=await manager.call('/manage/products',fields);
+    assert.equal(duplicate.status,409);
+    assert.match(duplicate.data.message,/Mã sản phẩm/);
+    assert.equal((await manager.call('/manage/products',{...fields,code:randomUUID(),image:'/wrong.jpg'})).status,400);
+    await manager.ok(path,{status:'AN'},'PUT');
+    assert.equal((await customer.call('/products/'+product.id)).status,404);
     await manager.ok(brandPath,{name,status:'NHAP'},'PUT');
     await manager.ok(catPath,{name,status:'AN'},'PUT');
     assert.equal((await remove(catPath)).status,409);
@@ -101,6 +104,43 @@ test('MySQL + Node.js: phân quyền, mua hàng, kho, hoàn tiền và quản tr
     await manager.ok('/manage/variants',{productId:product.id,sizeId:lookups.sizes[0].id,colorId:lookups.colors[0].id,sku:uid});
     for(const endpoint of [path,catPath,brandPath])assert.equal((await remove(endpoint)).status,200);
   });
+  await t.test('Biến thể lọc theo sản phẩm, báo trùng đúng và ẩn không đổi tồn',async()=>{
+    const products=await manager.ok('/manage/products');
+    const scoped=id=>manager.ok('/manage/variants?productId='+id);
+    const [source,target]=products;
+    const [variant]=await scoped(source.id);
+    assert.ok(variant);
+    assert.ok((await scoped(source.id)).every(row=>row.productId===source.id));
+    assert.ok((await manager.ok('/manage/variants')).some(row=>row.productId===target.id));
+    assert.equal((await manager.call('/manage/variants?productId=bad')).status,400);
+    const create=body=>manager.call('/manage/variants',body);
+    const fields={productId:source.id,sku:randomUUID(),sizeId:variant.sizeId,colorId:variant.colorId};
+    const pair=await create(fields);
+    assert.equal(pair.status,409);
+    assert.match(pair.data.message,/size và màu/);
+    const lookups=await manager.ok('/manage/lookups');
+    const targetRows=await scoped(target.id);
+    const sizeId=lookups.sizes.find(size=>!targetRows.some(row=>row.sizeId===size.id&&row.colorId===variant.colorId))?.id
+      ?? (await manager.ok('/manage/sizes',{name:'98.5'})).id;
+    const sku=await create({...fields,productId:target.id,sizeId,sku:variant.sku});
+    assert.equal(sku.status,409);
+    assert.match(sku.data.message,/SKU/);
+    const a=await manager.ok('/manage/products',{code:randomUUID(),name:'QA biến thể',price:100000,categoryId:target.categoryId,brandId:target.brandId});
+    const added=await manager.ok('/manage/variants',{...fields,productId:a.id});
+    const endpoint='/manage/variants/'+added.id;
+    await manager.ok(endpoint,{active:'0'},'PUT');
+    const [hidden]=await scoped(a.id);
+    assert.equal(hidden.active,0);
+    assert.equal('stock' in hidden,false);
+    const [inventory]=await manager.ok('/manage/stock?productId='+a.id);
+    assert.equal(inventory.id,added.id);
+    assert.equal(inventory.stock,0);
+    assert.equal('price' in inventory,false);
+    assert.equal((await customer.call('/manage/stock')).status,403);
+    assert.equal((await customer.ok('/products/'+a.id)).variants.length,0);
+    await manager.ok(endpoint,undefined,'DELETE');
+    assert.equal((await manager.call(endpoint,{active:0},'PUT')).status,404);
+  });
   const {products}=await customer.ok('/catalog?q=Air%20Max%20Pulse');
   const sample=products.find(p=>p.brand==='Nike'&&p.name.includes('Air Max Pulse'));
   assert.ok(sample,'Cần sản phẩm mẫu Air Max Pulse để kiểm tra đơn có ưu đãi.');
@@ -111,6 +151,18 @@ test('MySQL + Node.js: phân quyền, mua hàng, kho, hoàn tiền và quản tr
   await t.test('Xác nhận thu một lần, xuất kho và hoàn thành',async()=>{let o=await manager.ok('/orders/'+id);await manager.ok('/manage/payments/'+o.payments[0].id+'/confirm',{proof:'QA giao dịch chuyển khoản mô phỏng'});await manager.ok('/manage/payments/'+o.payments[0].id+'/confirm',{proof:'QA retry'});for(const status of ['DA_XAC_NHAN','DANG_CHUAN_BI','DANG_GIAO','DA_GIAO','HOAN_THANH'])await manager.ok('/manage/orders/'+id+'/status',{status});o=await customer.ok('/orders/'+id);assert.equal(o.status,'HOAN_THANH');assert.equal(o.paid,o.total);const [stock]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);assert.equal(stock.SoLuongTon,before.SoLuongTon-1);assert.equal(stock.SoLuongDaPhanBo,before.SoLuongDaPhanBo);await customer.ok('/reviews',{itemId:o.items[0].id,stars:4,content:'Kiểm thử luồng mua hàng thành công.'});assert.equal((await customer.call('/reviews',{itemId:o.items[0].id,stars:5})).status,409);});
   await t.test('Trả hàng, nhận kho một lần và hoàn tiền có bằng chứng',async()=>{const o=await customer.ok('/orders/'+id);await customer.ok('/returns',{itemId:o.items[0].id,quantity:1,type:'TRA',reason:'QA trả hàng mô phỏng'});const ret=(await customer.ok('/returns'))[0];await manager.ok('/manage/returns/'+ret.id+'/action',{action:'approve',reason:'QA đủ điều kiện'});await manager.ok('/manage/returns/'+ret.id+'/action',{action:'receive',sellable:true,reason:'QA hàng đạt'});assert.equal((await manager.call('/manage/returns/'+ret.id+'/action',{action:'receive',sellable:true})).status,400);const refunds=await manager.ok('/manage/refunds');const refund=refunds.find(x=>x.code===o.code);assert.ok(refund);await manager.ok('/manage/refunds/'+refund.id+'/confirm',{proof:'QA bằng chứng hoàn mô phỏng'});await manager.ok('/manage/returns/'+ret.id+'/action',{action:'complete'});const [stock]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);assert.equal(stock.SoLuongTon,before.SoLuongTon);assert.equal(stock.SoLuongDaPhanBo,before.SoLuongDaPhanBo);});
   await t.test('Hủy đơn giải phóng giữ kho mà không tăng tồn vật lý',async()=>{await customer.ok('/cart',{variantId:v.id,quantity:2},'PUT');const a=await customer.ok('/orders',{requestId:randomUUID(),name:'QA',phone:'0909876543',address:'Địa chỉ QA',method:'COD'});await customer.ok('/orders/'+a.id+'/cancel',{reason:'QA hủy đơn'});await customer.ok('/orders/'+a.id+'/cancel',{reason:'QA retry hủy'});const [stock]=await query('SELECT * FROM TonKho WHERE BienTheID=?',[v.id]);assert.equal(stock.SoLuongTon,before.SoLuongTon);assert.equal(stock.SoLuongDaPhanBo,before.SoLuongDaPhanBo);});
+  await t.test('Ẩn biến thể đã bán giữ lịch sử và chặn đặt từ giỏ cũ',async()=>{
+    const before=await customer.ok('/orders/'+id);
+    await customer.ok('/cart',{variantId:v.id,quantity:1},'PUT');
+    const endpoint='/manage/variants/'+v.id;
+    await manager.ok(endpoint,{active:0},'PUT');
+    assert.equal((await customer.call('/checkout/quote',{method:'COD'})).status,400);
+    assert.equal((await manager.call(endpoint,undefined,'DELETE')).status,409);
+    const after=await customer.ok('/orders/'+id);
+    assert.deepEqual(after.items,before.items);
+    await manager.ok(endpoint,{active:1},'PUT');
+    await customer.ok('/cart',{variantId:v.id,quantity:0},'PUT');
+  });
   await t.test('Báo cáo, log, kiểm soát tự nâng quyền',async()=>{const report=await manager.ok('/manage/reports');assert.equal(report.revenue,report.income-report.refund);assert.ok((await admin.ok('/admin/logs')).length>0);const me=(await admin.ok('/me')).user;assert.equal((await admin.call('/admin/accounts/'+me.id,{name:'QA',status:'HOAT_DONG',role:'CUSTOMER'},'PUT')).status,400);});
   await t.test('Đối chiếu tồn kho bằng sổ kho không có chênh lệch',async()=>{const rows=await query('SELECT k.BienTheID FROM TonKho k LEFT JOIN (SELECT BienTheID,SUM(ThayDoiTon) t,SUM(ThayDoiPhanBo) p FROM BienDongKho GROUP BY BienTheID) s ON s.BienTheID=k.BienTheID WHERE k.SoLuongTon<>COALESCE(s.t,0) OR k.SoLuongDaPhanBo<>COALESCE(s.p,0)');assert.equal(rows.length,0);});
  }finally{await pool.end();}

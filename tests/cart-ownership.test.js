@@ -2,7 +2,7 @@ import 'dotenv/config';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {readGuestCart,writeGuestCart,clearGuestCart} from '../src/guest-cart.js';
+import {readGuestCart,writeGuestCart,clearGuestCart} from '../frontend/src/guest-cart.js';
 
 const storage=()=>{const values=new Map();return {getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};};
 test('Giỏ khách không đọc giỏ localStorage cũ và được dọn khi chuyển tài khoản',()=>{
