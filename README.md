@@ -1,6 +1,19 @@
 # Shop-giay — SOLE STUDIO Nhóm 19
 
-Ứng dụng web dùng **Node.js + React + MySQL**, xây dựng từ các chức năng trong `S2_Nhom19_Lan3.docx`. Giao diện tiếng Việt, thích ứng máy tính và điện thoại. Dữ liệu được lưu thật vào MySQL; giỏ khách được lưu riêng theo tab, không tự gộp vào tài khoản; danh sách yêu thích được lưu trên thiết bị.
+Ứng dụng web bán giày dùng **ASP.NET Core Web API trên .NET 10, React + Vite và MySQL**. Backend tổ chức theo BCE: `Boundary` nhận HTTP, `Control` xử lý ca sử dụng, `Entity` biểu diễn nghiệp vụ; tích hợp và tác vụ nền nằm trong `Infrastructure`.
+
+## Chạy hệ thống BCE
+
+Cài .NET 10 SDK, Node.js 22.12 trở lên và MySQL 8.0.16 trở lên. Trong PowerShell tại thư mục dự án, chạy `npm.cmd ci`, sao chép `.env.example` thành `.env` nếu chưa có và điền cấu hình MySQL. Chạy `npm.cmd run dev` để build backend và mở ASP.NET Core cùng Vite. Lần build đầu cần truy cập NuGet. Chạy production bằng `npm.cmd run build` rồi `npm.cmd start`.
+
+| Thành phần | Trách nhiệm |
+|---|---|
+| `frontend/` | React và Vite, trang HTML, CSS và ảnh công khai. |
+| `backend/ShopGiay.Api/Boundary/` | Điểm vào HTTP, kiểm tra đầu vào và trả JSON. |
+| `backend/ShopGiay.Api/Control/` | Điều phối ca sử dụng, xác định phiên và thực hiện giao dịch MySQL. |
+| `backend/ShopGiay.Api/Entity/` | 37 lớp dữ liệu theo tài liệu Class Diagram. Ví dụ, lớp TonKho kiểm tra lượng khả dụng trước khi cập nhật giỏ. |
+
+Khi phát triển, Vite chạy độc lập trên `PORT` (mặc định 5173) và chuyển yêu cầu `/api` đến ASP.NET Core ở `API_PORT` (mặc định 5174). Trong production, ASP.NET Core phục vụ cả API và giao diện đã build trong `frontend/dist` trên `PORT`. Tác vụ .NET kiểm tra đơn hết hạn thanh toán mỗi 15 giây.
 
 ## Các khu vực của ứng dụng
 
@@ -8,7 +21,7 @@
 - Chủ shop: [http://localhost:5173/manager](http://localhost:5173/manager)
 - Kỹ thuật: [http://localhost:5173/admin](http://localhost:5173/admin)
 
-Nếu máy chủ Node.js đã dừng, mở terminal trong thư mục dự án và chạy:
+Mở PowerShell trong thư mục dự án và chạy:
 
 ```powershell
 npm.cmd run dev
@@ -28,11 +41,15 @@ Có thêm khách mẫu `linh@sole.vn`, `kiet@sole.vn` dùng cùng mật khẩu. 
 
 Trong hộp đăng nhập, mở **Tài khoản trải nghiệm** để điền nhanh một vai trò; vẫn cần bấm Đăng nhập.
 
+Các tài khoản trên được tạo bởi `npm.cmd run db:seed`. Nếu dùng database có sẵn, `db:seed` không ghi đè tài khoản hoặc dữ liệu hiện tại; hãy đăng nhập bằng tài khoản đã có trong database đó.
+
 ## Cấu hình môi trường
 
-Ứng dụng yêu cầu Node.js từ 22.12 và MySQL từ 8.0.16. Cấu hình mặc định ưu tiên MySQL cổng **3306** và website cổng **5173**. Tài khoản và mật khẩu MySQL do người chạy cấu hình riêng trong `.env`; repository chỉ cung cấp `.env.example`.
+Ứng dụng yêu cầu .NET 10 SDK, Node.js từ 22.12 và MySQL từ 8.0.16. Cấu hình mặc định dùng MySQL cổng **3306** và website cổng **5173**. Điền tài khoản và mật khẩu MySQL trong `.env` theo mẫu `.env.example`.
 
 Không commit `.env`, dữ liệu MySQL cục bộ hoặc thư viện `node_modules`. Nếu dịch vụ MySQL nằm trên cùng máy, dùng `DB_HOST=127.0.0.1`; nếu dùng máy chủ khác, điền host phù hợp với quyền MySQL đã được cấp.
+
+Để gửi OTP qua Gmail thật, điền `SMTP_USER` và App Password vào `.env`, sau đó chạy `npm.cmd run mail:verify`. Hướng dẫn chi tiết, cấu hình Gmail và cách gửi OTP nằm trong [EMAIL_SETUP.md](EMAIL_SETUP.md). `.env.example` không chứa thông tin đăng nhập SMTP thật.
 
 ## Cài đặt và chạy từ GitHub
 
@@ -43,7 +60,7 @@ git clone https://github.com/3123411204LuNhan/Shop-giay.git
 cd Shop-giay
 ```
 
-2. Cài Node.js từ 22.12 trở lên và MySQL **8.0.16 trở lên**. Khuyến nghị MySQL 8.0 hoặc 8.4. Cần phiên bản hỗ trợ CHECK và cột tính toán lưu trữ.
+2. Cài .NET 10 SDK, Node.js từ 22.12 trở lên và MySQL **8.0.16 trở lên**. Khuyến nghị MySQL 8.0 hoặc 8.4. Cần phiên bản hỗ trợ CHECK và cột tính toán lưu trữ.
 3. Mở terminal tại thư mục dự án và cài thư viện:
 
 ```powershell
@@ -65,7 +82,7 @@ APP_ORIGIN=http://localhost:5173
 NODE_ENV=development
 ```
 
-5. Khi database đích còn mới, tạo cấu trúc rồi nạp dữ liệu:
+5. Khi database đích còn mới, dùng các lệnh bên dưới để tạo cấu trúc rồi nạp dữ liệu mẫu.
 
 ```powershell
 npm.cmd run db:setup
@@ -73,9 +90,9 @@ npm.cmd run db:seed
 npm.cmd run dev
 ```
 
-`db:setup` từ chối ghi đè khi database đã có bảng. `db:seed` từ chối chạy nếu đã có tài khoản, để tránh nạp trùng hoặc xóa dữ liệu đã sử dụng. Sau lần khởi tạo thành công, bình thường chỉ chạy `npm.cmd run dev`.
+Các lệnh `db:setup`, `db:seed` và `db:migrate` dùng C# và MySqlConnector. Launcher nạp `.env` và chạy lệnh trong ứng dụng .NET. `db:setup` dùng `database/schema.sql` và dừng nếu database đã có bảng. `db:seed` dừng nếu đã có tài khoản và nạp dữ liệu mẫu trong một giao dịch. Sau lần khởi tạo thành công, chỉ cần chạy `npm.cmd run dev`.
 
-Khi cập nhật một bản đã có dữ liệu, giữ cấu hình trong `.env`, chạy `npm.cmd ci`, tiếp theo chạy `npm.cmd run db:migrate` rồi `npm.cmd run dev`. Các lần mở lại chỉ cần bật MySQL và chạy `npm.cmd run dev` trong thư mục chứa `package.json`.
+Khi cập nhật một bản đã có dữ liệu, giữ cấu hình trong `.env`, chạy `npm.cmd ci`, tiếp theo chạy `npm.cmd run db:migrate` rồi `npm.cmd run dev`. Migration có thể chạy lại và giữ các bản ghi hiện có. Trên schema cũ, nó chuyển trạng thái tài khoản `VO_HIEU_HOA` sang `BI_KHOA` và sản phẩm `NHAP` sang `AN` để dùng được với backend hiện tại.
 
 Nếu dùng database mới, đổi `DB_NAME` rồi chạy lại hai bước. MySQL DDL tự commit; nếu lần tạo schema bị gián đoạn, kiểm tra lỗi và dùng tên database mới thay vì xóa database đang có dữ liệu.
 
@@ -107,7 +124,7 @@ Không khởi động container trùng cổng 3306 với MySQL đang chạy. Doc
 - Xem chi tiết, giá, mô tả, đánh giá và lựa chọn size/màu còn hàng.
 - Giỏ hàng: thêm, đổi số lượng, xóa. Giỏ tài khoản lưu riêng trong MySQL theo ID khách; giỏ khách dùng sessionStorage theo tab. Đăng nhập/đăng xuất dọn giỏ khách, không tự chuyển sản phẩm vào tài khoản khác.
 - Đăng ký, đăng nhập, đăng xuất, sửa họ tên/điện thoại/địa chỉ.
-- Quên mật khẩu bằng OTP 6 số qua Gmail/SMTP; nếu chưa cấu hình hoặc gửi thất bại thì lưu hộp thư `.local/mail`. Xác minh mã trước khi đặt mật khẩu mới.
+- Quên mật khẩu bằng OTP 6 số qua SMTP; xem [EMAIL_SETUP.md](EMAIL_SETUP.md) để cấu hình. Nếu gửi thất bại, mặc định lưu OTP vào `.local/mail` khi phát triển local.
 - Đặt hàng bằng COD hoặc chuyển khoản; áp mã giảm giá; miễn phí giao hàng từ 1.500.000đ, còn lại 30.000đ.
 - Xem đơn, lịch sử trạng thái; hủy trước khi giao; gửi đánh giá cho đơn hoàn thành.
 - Gửi yêu cầu đổi hoặc trả kèm số lượng, lý do và ảnh bằng chứng tùy chọn từ tệp hoặc URL. Đổi sang biến thể khác cùng sản phẩm và cùng đơn giá lúc mua. Sau khi nhận hàng và kiểm tra điều kiện, shop tạo đơn thay thế.
@@ -144,20 +161,25 @@ Không khởi động container trùng cổng 3306 với MySQL đang chạy. Doc
 - Mã `SOLE200`: giảm 200.000đ, đơn tối thiểu 2.500.000đ.
 - Khi chạy kiểm thử tích hợp, có thêm tài khoản `QA Kiểm thử` và đơn/hoàn tiền mô phỏng; chúng được giữ để đối chiếu, không phải giao dịch thực.
 
-Giá, ảnh và số liệu là dữ liệu minh họa cho đồ án. Không chuyển tiền thật theo dữ liệu mẫu. Các ảnh giày được lưu trong `public/images`, lấy từ Unsplash và dùng để minh họa phong cách, không khẳng định là ảnh chính xác của từng model sản phẩm.
+Giá, ảnh và số liệu là dữ liệu minh họa cho đồ án. Không chuyển tiền thật theo dữ liệu mẫu. Các ảnh giày được lưu trong `frontend/public/images`, lấy từ Unsplash và dùng để minh họa phong cách, không khẳng định là ảnh chính xác của từng model sản phẩm.
 
 ## Kiểm tra và build
 
-Máy chủ ứng dụng phải đang chạy trước khi kiểm thử API:
+Dùng lệnh sau để chạy toàn bộ bộ kiểm thử. Bật MySQL trước và dùng tài khoản trong `.env` có quyền tạo và xóa database kiểm thử.
+
+```powershell
+npm.cmd run test:integration
+```
+
+Lệnh tạo database tạm và nạp dữ liệu mẫu, mở ASP.NET Core và Vite trên hai cổng riêng rồi đợi `/api/health` xác nhận kết nối MySQL. Nếu khởi động thất bại, lệnh báo bước bị lỗi trước khi chạy test. Khi kết thúc, lệnh tắt hai máy chủ và dọn database, OTP local và ảnh của lượt kiểm thử.
+
+`npm.cmd test` vẫn có thể chạy với máy chủ đã mở sẵn. Đặt cùng biến `PORT` và `DB_NAME` cho máy chủ và terminal chạy test. Chỉ dùng database thử riêng có tên bắt đầu bằng `sole_studio_nhom19` vì test có ghi dữ liệu.
 
 ```powershell
 npm.cmd run check
-npm.cmd test
 npm.cmd run build
 npm.cmd start
 ```
-
-`npm.cmd test` kiểm tra các luồng thật qua API và MySQL: xác thực, chống tự nâng quyền, phân quyền, đặt hàng có ưu đãi, gửi lại cùng request, giữ/xuất/giải phóng kho, thanh toán, trả hàng, hoàn tiền và đối chiếu sổ kho. Chỉ chạy trên database riêng có tên bắt đầu bằng `sole_studio_nhom19`.
 
 `npm.cmd start` phục vụ bản đã build. Chỉ chạy một máy chủ cho cùng cổng. Cookie tự dùng Secure khi request đi qua HTTPS; NODE_ENV không quyết định cờ này. Khi dùng reverse proxy HTTPS, cấu hình TRUST_PROXY_HOPS theo hạ tầng thực tế.
 
@@ -165,18 +187,20 @@ npm.cmd start
 
 ```text
 Shop-giay/
-  src/main.jsx          Giao diện React của ba khu vực
-  src/styles.css        Bố cục và giao diện responsive
-  src/extras.css        Các thành phần bổ sung
-  server/index.js       Máy chủ Express và bảo vệ yêu cầu
-  server/routes.js      API nghiệp vụ, giao dịch và phân quyền
-  server/auth.js        Hash mật khẩu, phiên và nhật ký
-  server/db.js          Kết nối MySQL và transaction
+  frontend/src/main.jsx          Giao diện React của ba khu vực
+  frontend/src/styles.css        Bố cục và giao diện responsive
+  frontend/src/extras.css        Các thành phần bổ sung
+  backend/ShopGiay.Api/Program.cs      Khởi động ASP.NET Core
+  backend/ShopGiay.Api/Boundary/       Controller của API
+  backend/ShopGiay.Api/Control/        Điều phối nghiệp vụ
+  backend/ShopGiay.Api/Entity/         Các lớp nghiệp vụ
+  backend/ShopGiay.Api/Infrastructure/ SQL, SMTP, ảnh tải lên và tác vụ nền
   database/schema.sql   Đủ 37 bảng MySQL, không có DROP
-  scripts/setup-db.js   Khởi tạo schema trên database mới
-  scripts/seed.js       Dữ liệu mẫu, không ghi đè dữ liệu cũ
+  backend/ShopGiay.Api/Infrastructure/DatabaseMaintenance.cs  Khởi tạo và nâng cấp schema
+  backend/ShopGiay.Api/Infrastructure/DatabaseSeed.cs         Nạp dữ liệu mẫu
+  scripts/start-system.js  Launcher cho .NET, Vite và lệnh bảo trì
   tests/                Kiểm thử tích hợp API và MySQL
-  public/images/        Ảnh minh họa cục bộ
+  frontend/public/images/        Ảnh minh họa cục bộ
   .env.example          Mẫu cấu hình không chứa mật khẩu thật
   .env                  Cấu hình riêng của máy, không chia sẻ
 ```
@@ -193,11 +217,11 @@ Shop-giay/
 - Giá và giảm giá đã chụp trên đơn không thay đổi theo việc sửa sản phẩm hoặc chương trình sau này.
 - Khi chọn nhiều mã, bản hiện tại chỉ nhận **một mã ưu đãi cho một đơn**. Cột kết hợp trong schema được giữ cho mở rộng nhưng chưa có giao diện cộng dồn mã.
 - `rowversion` của SQL Server được chuyển thành `PhienBan bigint` trên MySQL. Các thao tác kho và đơn quan trọng dùng khóa `FOR UPDATE`; đây không phải tính năng rowversion tự động của MySQL.
-- Không có tác vụ tự động hủy đơn hết hạn. Gửi OTP email thật cần cấu hình SMTP theo EMAIL_SETUP.md. Ảnh sản phẩm và ảnh bằng chứng hỗ trợ một tệp JPEG, PNG hoặc WebP tối đa 5 MB, hoặc một URL. Tệp mặc định lưu tại `.local/uploads` và có thể đổi thư mục qua biến `IMAGE_UPLOAD_DIR`. Ảnh bằng chứng tải lên được phục vụ qua API kiểm tra quyền.
+- Backend dùng `OrderExpiryWorker` để xử lý đơn chuyển khoản hết hạn. Gửi OTP qua email cần cấu hình SMTP trong `.env`. Ảnh sản phẩm và ảnh bằng chứng hỗ trợ một tệp JPEG, PNG hoặc WebP tối đa 5 MB, hoặc một URL. Tệp mặc định lưu tại `.local/uploads` và có thể đổi thư mục qua biến `IMAGE_UPLOAD_DIR`. Ảnh bằng chứng tải lên được phục vụ qua API kiểm tra quyền.
 
 ## Nguồn ảnh minh họa
 
-Ảnh cục bộ tải từ các tài nguyên Unsplash: `photo-1542291026-7eec264c27ff`, `photo-1600269452121-4f2416e55c28`, `photo-1549298916-b41d501d3772`, `photo-1600185365926-3a2ce3cdb9eb`, `photo-1539185441755-769473a23570`, `photo-1543508282-6319a3e2621f`. Script `scripts/download-images.js` tải lại nếu cần. Font giao diện là Be Vietnam Pro qua Google Fonts, có font hệ thống dự phòng khi không có mạng.
+Ảnh cục bộ tải từ các tài nguyên Unsplash: `photo-1542291026-7eec264c27ff`, `photo-1600269452121-4f2416e55c28`, `photo-1549298916-b41d501d3772`, `photo-1600185365926-3a2ce3cdb9eb`, `photo-1539185441755-769473a23570`, `photo-1543508282-6319a3e2621f`. Ứng dụng dùng các ảnh có sẵn trong `frontend/public/images`. Font giao diện là Be Vietnam Pro qua Google Fonts, có font hệ thống dự phòng khi không có mạng.
 
 ## Phiên đăng nhập độc lập giữa ba khu vực
 
@@ -226,7 +250,7 @@ Tài khoản có vai trò SHOP_MANAGER hoặc SYSTEM_ADMIN không được đăn
 
 ## Cập nhật luồng nghiệp vụ phát triển ngày 18/11/2026
 
-Đọc [Hướng dẫn luồng phát triển](HUONG_DAN_LUONG_PHAT_TRIEN.md) để sử dụng phiếu kho nháp/xác nhận, cảnh báo tồn, kiểm tra tổng tiền trước đặt, tự hết hạn giữ hàng chuyển khoản, đối soát tiền đến muộn, giao thất bại và hoàn tiền có thử lại. Quản lý kiêm kho; admin giữ phạm vi kỹ thuật. Chạy `npm.cmd run db:migrate` trước khi chạy bản mới; không tạo lại database hoặc seed lại.
+Quản lý shop kiêm nghiệp vụ kho; admin giữ phạm vi kỹ thuật. Đơn chuyển khoản hết hạn được tác vụ nền xử lý; tiền đến muộn và hoàn tiền được ghi nhận theo luồng trạng thái. Khi nâng cấp database cũ, chạy `npm.cmd run db:migrate`; không tạo lại database hoặc seed lại.
 
 
 ## Giao diện khách hàng ngày 19/11/2026

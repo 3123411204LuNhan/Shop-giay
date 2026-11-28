@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {reportCSV} from '../src/report-export.js';
+import {reportCSV} from '../frontend/src/report-export.js';
 
 test('CSV ghi đúng kỳ, tiêu chí, dữ liệu đã hiển thị và vô hiệu công thức từ tên sản phẩm',()=>{
   const report={type:'summary',group:'variant',rank:'amount',from:'2040-02-12',to:'2040-02-13',

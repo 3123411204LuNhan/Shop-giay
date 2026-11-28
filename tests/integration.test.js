@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {pool,config,query} from '../server/db.js';
+import {pool,config,query} from './db.js';
 const base=`http://127.0.0.1:${process.env.PORT||5173}/api`;
 class Client{cookie='';area='customer';async call(path,body,method=body?'POST':'GET'){const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json','X-Sole-Request':'1','X-Sole-Area':this.area,Cookie:this.cookie},body:body?JSON.stringify(body):undefined});if(r.headers.get('set-cookie'))this.cookie=r.headers.getSetCookie().at(-1).split(';')[0];const data=await r.json();if(data.area&&r.ok)this.area=data.area;return {status:r.status,data};}async ok(...args){const r=await this.call(...args);assert.ok(r.status<300,JSON.stringify(r));return r.data;}}
-test('MySQL + Node.js: phân quyền, mua hàng, kho, hoàn tiền và quản trị',async t=>{
+test('ASP.NET Core + MySQL: phân quyền, mua hàng, kho, hoàn tiền và quản trị',async t=>{
  assert.match(config.database,/^sole_studio_nhom19/,'Chỉ chạy trên database đồ án riêng.');
  const guest=new Client(),customer=new Client(),manager=new Client(),admin=new Client();
  try{

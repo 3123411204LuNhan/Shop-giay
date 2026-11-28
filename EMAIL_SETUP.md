@@ -1,4 +1,6 @@
-# Gửi OTP qua Gmail và hộp thư local
+# Gửi OTP qua SMTP thật
+
+Backend gửi email bằng MailKit. Khi SMTP được cấu hình đúng, mã OTP được gửi tới hộp thư của tài khoản; nếu máy chưa có cấu hình hoặc SMTP từ chối gửi, mặc định ứng dụng ghi mã vào `.local/mail` để phát triển local.
 
 ## Sử dụng trên website
 
@@ -11,7 +13,7 @@ OTP có hạn **10 phút**, chỉ dùng một lần, tối đa **5 lần nhập 
 
 ## Cấu hình Gmail
 
-Trong `.env` của thư mục thực sự chạy Node.js:
+Trong `.env` ở thư mục gốc của dự án, điền cấu hình SMTP như sau.
 
 ```dotenv
 SMTP_HOST=smtp.gmail.com
@@ -29,24 +31,25 @@ MAIL_FALLBACK_LOCAL=true
 
 Sau khi sửa `.env`, dừng và chạy lại server. `.env` và `.local/` không được đưa lên GitHub.
 
+Để bắt buộc mọi yêu cầu OTP phải gửi qua SMTP và báo lỗi thay vì ghi local, đặt `MAIL_FALLBACK_LOCAL=false`. Chỉ nên bật khi SMTP đã hoạt động; email chưa đăng ký và địa chỉ miền thử nghiệm không bao giờ được gửi qua SMTP.
+
 Kiểm tra kết nối và đăng nhập SMTP:
 
 ```powershell
 npm.cmd run mail:verify
 ```
 
-Lệnh này **không gửi thư**. Khi báo thành công, dùng thao tác Quên mật khẩu trên website với một email đã đăng ký để kiểm tra nhận thư thực tế.
+Lệnh này kết nối SMTP và xác thực tài khoản gửi, nhưng **không gửi thư**. Khi báo thành công, dùng Quên mật khẩu trên website với email thật đã đăng ký trong database để kiểm tra gửi và nhận thư.
 
 ## Nâng cấp database cũ
 
 ```powershell
-npm.cmd install
+npm.cmd ci
 npm.cmd run db:migrate
-npm.cmd run build
 npm.cmd run dev
 ```
 
-Migration chỉ bổ sung cột nullable `MaXacMinhHash binary(32)` trong `DatLaiMatKhau`; không xóa dữ liệu, không thêm bảng và có thể chạy lại. Database tạo mới từ `database/schema.sql` đã có sẵn cột này.
+Lệnh C# nâng cấp schema cũ và bổ sung cột `MaXacMinhHash binary(32) NULL` vào `DatLaiMatKhau` nếu thiếu. Lệnh giữ các bản ghi hiện có và có thể chạy lại. Database tạo mới từ `database/schema.sql` đã có cột này.
 
 ## Khi nào lưu local
 
@@ -65,10 +68,10 @@ Hệ thống không thể xác nhận chắc chắn mọi địa chỉ email có
 - API không trả mã OTP hoặc mật khẩu SMTP cho trình duyệt. OTP và token đặt lại được lưu dạng hash trong database.
 - Cookie đăng nhập của khách/manager/admin vẫn độc lập; đổi mật khẩu thu hồi các phiên của đúng tài khoản được đổi.
 - Token từ bản cũ có thể tiếp tục hoạt động đến khi hết hạn nếu chưa có yêu cầu mới. Các yêu cầu OTP mới cần hoàn thành bước xác minh trước khi được cấp token đặt lại mật khẩu.
-- SMTP và hộp thư local có kiểm thử giả lập; kiểm tra gửi/nhận thực tế phải dùng hộp thư bạn quản lý. Không đặt dữ liệu `.local` trong thư mục public.
+- Kiểm thử tự động không dùng hộp thư thật. Kiểm tra gửi/nhận thực tế phải dùng hộp thư bạn quản lý. Không đặt dữ liệu `.local` trong thư mục public.
 
 ## Dùng SMTP khác
 
 Có thể đổi SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER và SMTP_PASSWORD. Khi dùng SMTP_PASSWORD hãy để trống SMTP_APP_PASSWORD. Cổng 587 dùng `SMTP_SECURE=false` và yêu cầu nâng cấp STARTTLS; cổng 465 dùng TLS ngay từ đầu.
 
-Tài liệu thư viện: [Nodemailer SMTP](https://nodemailer.com/smtp).
+Thư viện SMTP của backend là MailKit.

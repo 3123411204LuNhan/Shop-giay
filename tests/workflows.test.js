@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {query,pool,config} from '../server/db.js';
-import {expireUnpaidOrders} from '../server/routes.js';
+import {query,pool,config} from './db.js';
 
 const base=`http://127.0.0.1:${process.env.PORT||5173}/api`;
 class Client {
@@ -191,7 +190,13 @@ test('Luồng phát triển: phiếu kho, hết hạn, COD, giao thất bại, t
       const a=await newOrder('BANK_TRANSFER',2);orderId=a.id;const o=await customer.ok('/orders/'+a.id);assert.ok(o.paymentDeadline);assert.deepEqual(await stock(),{physical:12,reserved:2});
       assert.equal((await manager.call('/manage/orders/'+a.id+'/status',{status:'DA_XAC_NHAN'})).status,400);
       await query('UPDATE DonHang SET HanThanhToan=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 MINUTE) WHERE DonHangID=?',[a.id]);
-      await expireUnpaidOrders();await expireUnpaidOrders();const after=await customer.ok('/orders/'+a.id);assert.equal(after.status,'DA_HUY');assert.equal(after.payments[0].status,'HET_HAN');assert.deepEqual(await stock(),{physical:12,reserved:0});
+      let after;
+      const deadline=Date.now()+20000;
+      do {
+        after=await customer.ok('/orders/'+a.id);
+        if(after.status==='DA_HUY')break;
+        await new Promise(resolve=>setTimeout(resolve,250));
+      }while(Date.now()<deadline);assert.equal(after.status,'DA_HUY');assert.equal(after.payments[0].status,'HET_HAN');assert.deepEqual(await stock(),{physical:12,reserved:0});
     });
     await t.test('Tiền đến sau hủy tạo một khoản hoàn, không khôi phục đơn hay giữ hàng',async()=>{
       await manager.ok('/manage/orders/'+orderId+'/late-payment',{amount:4000000,proof:'QA tiền vào sau hết hạn'});await manager.ok('/manage/orders/'+orderId+'/late-payment',{amount:4000000,proof:'QA gửi lại'});
